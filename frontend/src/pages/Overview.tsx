@@ -1,0 +1,534 @@
+import { useEffect, useState, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  TrendingUp, TrendingDown, Building2, Users, Bell,
+  AlertTriangle, DollarSign, ArrowRight, Clock,
+  Zap, CheckCircle2, Smartphone, Wallet, Banknote, Home,
+} from "lucide-react";
+import { getBoard, getMaintenanceSummary, getOwnerStatement, getRooms } from "../lib/api";
+import { Card, Badge, money, AnimatedNumber, Sparkline } from "../components/ui";
+import { getToken } from "../lib/api";
+import BuildingCanvas from "../components/BuildingCanvas";
+import TenantDetailModal from "../components/TenantDetailModal";
+
+interface PaymentEvent {
+  id: string;
+  tenant_id: string;
+  tenant_name: string;
+  unit_number: string;
+  amount: number;
+  method: string;
+  reference: string | null;
+  paid_at: string;
+  message: string;
+  payment_method_label: string;
+}
+
+interface Alert {
+  icon: React.ReactNode;
+  text: string;
+  color: string;
+  count?: number;
+}
+
+function methodBadge(method: string) {
+  const map: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+    mpesa:  { label: "M-Pesa",  color: "text-emerald-400 bg-emerald-500/10", icon: <Smartphone className="w-3 h-3" /> },
+    airtel: { label: "Airtel",  color: "text-amber-400 bg-amber-500/10",  icon: <Smartphone className="w-3 h-3" /> },
+    bank:   { label: "Bank",    color: "text-sky-400 bg-sky-500/10",     icon: <Banknote className="w-3 h-3" /> },
+    equity: { label: "Equity",  color: "text-purple-400 bg-purple-500/10", icon: <Banknote className="w-3 h-3" /> },
+    cash:   { label: "Cash",    color: "text-lime-400 bg-lime-500/10",   icon: <Wallet className="w-3 h-3" /> },
+    card:   { label: "Card",    color: "text-violet-400 bg-violet-500/10", icon: <Wallet className="w-3 h-3" /> },
+  };
+  return map[method] || { label: method, color: "text-slate-400 bg-slate-500/10", icon: <DollarSign className="w-3 h-3" /> };
+}
+
+function timeAgo(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diff = Math.floor((now - then) / 1000);
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+};
+const item = {
+  hidden: { y: 20, opacity: 0 },
+  show: { y: 0, opacity: 1, transition: { type: "spring" as const, stiffness: 200, damping: 22 } },
+};
+
+export default function Overview() {
+  const [board, setBoard] = useState<any>(null);
+  const [maint, setMaint] = useState<any>(null);
+  const [stmt, setStmt] = useState<any>(null);
+  const [rooms, setRooms] = useState<any[]>([]);
+  const [activeRoom, setActiveRoom] = useState<string | null>(null);
+  const [selectedProp, setSelectedProp] = useState<string | null>(null);
+  const [recentPayments, setRecentPayments] = useState<PaymentEvent[]>([]);
+  const [tenantDetailId, setTenantDetailId] = useState<string | null>(null);
+  const [insights, setInsights] = useState<any>(null);
+
+  useEffect(() => {
+    getBoard().then((d) => {
+      setBoard(d);
+      if (d.hostels?.length) setSelectedProp(d.hostels[0].property_id);
+    }).catch(() => {});
+    getMaintenanceSummary().then(setMaint).catch(() => {});
+    getOwnerStatement().then(setStmt).catch(() => {});
+    const token = getToken();
+    if (token) fetch("/api/v1/analytics/insights", { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(setInsights).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!selectedProp) return;
+    getRooms(selectedProp).then((d) => setRooms(Array.isArray(d) ? d : d.rooms || [])).catch(() => {});
+  }, [selectedProp]);
+
+  useEffect(() => {
+    if (!board) return;
+    const token = getToken();
+    if (!token) return;
+
+    const fetchRecent = () => {
+      const since = new Date(Date.now() - 300_000).toISOString();
+      fetch(`/api/v1/payments/notifications?since=${encodeURIComponent(since)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((r) => r.json())
+        .then((d) => setRecentPayments(d.notifications || []))
+        .catch(() => {});
+    };
+
+    fetchRecent();
+    const iv = setInterval(fetchRecent, 15000);
+    return () => clearInterval(iv);
+  }, [board]);
+
+  const hostel = board?.hostels?.find((h: any) => h.property_id === selectedProp);
+
+  const perFloor = Math.ceil(Math.sqrt(rooms.length || 1)) + 2;
+  const floors = useMemo(() => {
+    const sorted = [...rooms].sort((a, b) =>
+      a.unit_number.localeCompare(b.unit_number, undefined, { numeric: true }));
+    const rows: any[][] = [];
+    for (let i = 0; i < sorted.length; i += perFloor) rows.push(sorted.slice(i, i + perFloor));
+    return rows.reverse().map((r, i) => ({ rooms: r, label: `${rows.length - i}F` }));
+  }, [rooms, perFloor]);
+
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { vacant: 0, unpaid: 0, partial: 0, paid: 0, overpaid: 0 };
+    rooms.forEach((r: any) => { c[r.rent_light] = (c[r.rent_light] || 0) + 1; });
+    return c;
+  }, [rooms]);
+
+  if (!board) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}>
+          <Zap className="w-8 h-8 text-emerald-400" />
+        </motion.div>
+      </div>
+    );
+  }
+
+  const t = board.totals;
+  const collectionRate = t.expected > 0 ? Math.round((t.collected / t.expected) * 100) : 0;
+  const occupancyRate = t.occupied + t.vacant > 0 ? Math.round((t.occupied / (t.occupied + t.vacant)) * 100) : 0;
+
+  const alerts: Alert[] = [
+    ...(t.unpaid > 0 ? [{ icon: <AlertTriangle className="w-4 h-4" />, text: `${t.unpaid} tenants unpaid this month`, color: "rose", count: t.unpaid }] : []),
+    ...(t.vacant > 0 ? [{ icon: <Building2 className="w-4 h-4" />, text: `${t.vacant} vacant units`, color: "amber", count: t.vacant }] : []),
+    ...(maint && maint.open > 0 ? [{ icon: <AlertTriangle className="w-4 h-4" />, text: `${maint.open} open maintenance tickets`, color: "amber", count: maint.open }] : []),
+  ];
+
+  const handleTenantClick = (tenantId: string) => {
+    setTenantDetailId(tenantId);
+  };
+
+  return (
+    <motion.div variants={container} initial="hidden" animate="show" className="space-y-4">
+
+      <motion.div variants={item} className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-white">Dashboard</h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {new Date().toLocaleDateString("en-KE", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+          </p>
+        </div>
+        {alerts.length > 0 && (
+          <div className="flex items-center gap-2">
+            {alerts.map((a, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.3 + i * 0.1 }}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${
+                  a.color === "rose" ? "bg-rose-500/10 text-rose-300 border border-rose-500/20" : "bg-amber-500/10 text-amber-300 border border-amber-500/20"
+                }`}>
+                {a.icon}
+                {a.text}
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </motion.div>
+
+      <motion.div variants={item}>
+        <Card className="p-5" hover={false}>
+          <div className="flex items-center gap-2 mb-4">
+            <DollarSign className="w-4 h-4 text-emerald-400" />
+            <h2 className="text-sm font-semibold text-white">Cash Flow</h2>
+            <span className="text-[10px] text-slate-600">This month</span>
+            <div className="ml-auto flex items-center gap-1.5 text-[11px] text-slate-500">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-glow-pulse" />
+              Collection rate <span className="text-emerald-400 font-semibold"><AnimatedNumber value={collectionRate} />%</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-6">
+            <div>
+              <div className="text-[11px] text-slate-500 mb-1">Expected</div>
+              <div className="text-2xl font-bold text-white">KES <AnimatedNumber value={money(t.expected)} /></div>
+            </div>
+            <div>
+              <div className="text-[11px] text-slate-500 mb-1">Collected</div>
+              <div className="text-2xl font-bold text-emerald-400">KES <AnimatedNumber value={money(t.collected)} /></div>
+            </div>
+            <div>
+              <div className="text-[11px] text-slate-500 mb-1">Outstanding</div>
+              <div className={`text-2xl font-bold ${t.outstanding > 0 ? "text-rose-400" : "text-white"}`}>
+                KES <AnimatedNumber value={money(t.outstanding)} />
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${collectionRate}%` }}
+              transition={{ duration: 1, ease: "easeOut", delay: 0.2 }}
+              className={`h-full rounded-full ${collectionRate > 80 ? "bg-gradient-to-r from-emerald-500 to-emerald-400" : collectionRate > 50 ? "bg-gradient-to-r from-amber-500 to-amber-400" : "bg-gradient-to-r from-rose-500 to-rose-400"}`}
+            />
+          </div>
+        </Card>
+      </motion.div>
+
+      <div className="grid md:grid-cols-5 gap-4">
+
+        <motion.div variants={item} className="md:col-span-3 space-y-4">
+
+          <Card className="overflow-hidden" hover={false}>
+            <div className="flex items-center gap-1 px-3 pt-3 pb-2 overflow-x-auto scrollbar-thin">
+              {board.hostels.map((h: any) => (
+                <button key={h.property_id} onClick={() => setSelectedProp(h.property_id)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-medium transition-all duration-200 whitespace-nowrap ${
+                    selectedProp === h.property_id
+                      ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                      : "bg-slate-800/40 text-slate-400 border border-slate-800 hover:border-slate-600 hover:text-slate-300"
+                  }`}>
+                  <Building2 className="w-3 h-3" />
+                  {h.property_name}
+                </button>
+              ))}
+            </div>
+            {rooms.length > 0 ? (
+              <>
+                <BuildingCanvas
+                  floors={floors}
+                  counts={counts}
+                  propertyName={hostel?.name}
+                  totalUnits={rooms.length}
+                  occupied={hostel?.occupied}
+                   onRoomClick={(r) => {
+                     if (r.tenant_name) {
+                       window.dispatchEvent(new CustomEvent("open-tenant-page", { detail: r }));
+                     } else {
+                       setActiveRoom(activeRoom === r.id ? null : r.id);
+                     }
+                   }}
+                  activeRoomId={activeRoom}
+                />
+                <div className="border-t border-white/[0.04] bg-slate-900/40 backdrop-blur-sm px-4 py-2.5 flex items-center justify-between text-[10px]">
+                  <div className="flex items-center gap-3 text-slate-400">
+                    <span className="font-mono text-slate-300">{hostel?.name}</span>
+                    <span className="text-slate-600">·</span>
+                    <span className="text-emerald-400">{t.occupied} occupied</span>
+                    <span className="text-slate-600">·</span>
+                    <span>{t.occupied + t.vacant} units</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                      <span className="text-slate-500">{counts.paid} paid</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-400" />
+                      <span className="text-slate-500">{counts.partial} partial</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-rose-400" />
+                      <span className="text-slate-500">{counts.unpaid} due</span>
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-center h-48 text-slate-500 text-xs">
+                No room data
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-4" hover={false}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Bell className="w-4 h-4 text-emerald-400" />
+                <h2 className="text-sm font-semibold text-white">Recent Activity</h2>
+                {recentPayments.length > 0 && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-glow-pulse" />
+                )}
+              </div>
+              <span className="text-[10px] text-slate-500">last 5 minutes</span>
+            </div>
+            {recentPayments.length === 0 ? (
+              <div className="text-center py-6">
+                <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center mx-auto mb-2">
+                  <Clock className="w-5 h-5 text-slate-600" />
+                </div>
+                <div className="text-xs text-slate-500">No recent payments</div>
+                <div className="text-[10px] text-slate-600 mt-0.5">Payments will appear here in real-time</div>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {recentPayments.map((p, i) => {
+                  const mb = methodBadge(p.method);
+                  return (
+                    <motion.div
+                      key={p.id}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.05 }}
+                      whileHover={{ x: 2 }}
+                      className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-slate-800/40 border border-slate-800 hover:bg-slate-800/70 hover:border-emerald-500/20 transition cursor-pointer"
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent("open-tenant", { detail: p.tenant_id }));
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${mb.color}`}>
+                          {mb.icon}
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-slate-200">
+                            <span className="text-emerald-400 font-semibold">KES {money(p.amount)}</span>
+                            <span className="text-slate-400 font-normal"> from {p.tenant_name}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5">
+                            <span className="font-semibold text-slate-400">House {p.unit_number}</span>
+                            <span>·</span>
+                            <span className={`inline-flex items-center gap-0.5 ${mb.color.split(" ")[0]}`}>
+                              {mb.icon}
+                              {mb.label}
+                            </span>
+                            <span>·</span>
+                            <span>{p.message}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right flex flex-col items-end gap-0.5">
+                        <span className="text-[10px] text-slate-600">{timeAgo(p.paid_at)}</span>
+                        {i === 0 && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        )}
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+        </motion.div>
+
+        <motion.div variants={item} className="md:col-span-2 space-y-4">
+
+          {alerts.length > 0 && (
+            <Card className="p-4" hover={false}>
+              <div className="flex items-center gap-2 mb-3">
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
+                <h2 className="text-sm font-semibold text-white">Needs Attention</h2>
+              </div>
+              <div className="space-y-2">
+                {alerts.map((a, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.08 }}
+                    whileHover={{ x: -2 }}
+                    className={`flex items-center justify-between px-3 py-2.5 rounded-xl ${
+                      a.color === "rose" ? "bg-rose-500/10 border border-rose-500/20" : "bg-amber-500/10 border border-amber-500/20"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className={a.color === "rose" ? "text-rose-400" : "text-amber-400"}>{a.icon}</span>
+                      <span className="text-xs text-slate-200">{a.text}</span>
+                    </div>
+                    {a.count && (
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                        a.color === "rose" ? "bg-rose-500/20 text-rose-300" : "bg-amber-500/20 text-amber-300"
+                      }`}>
+                        {a.count}
+                      </span>
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          <Card className="p-4" hover={false}>
+            <h2 className="text-sm font-semibold text-white mb-3">Summary</h2>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-xl bg-slate-800/40 border border-slate-800 p-3 hover:border-emerald-500/20 transition">
+                <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mb-1">
+                  <TrendingUp className="w-3 h-3 text-emerald-400" />
+                  Total Income
+                </div>
+                <div className="text-lg font-bold text-emerald-400">KES <AnimatedNumber value={money(stmt?.income.rental_income ?? 0)} /></div>
+              </div>
+              <div className="rounded-xl bg-slate-800/40 border border-slate-800 p-3 hover:border-sky-500/20 transition">
+                <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mb-1">
+                  <TrendingDown className="w-3 h-3 text-sky-400" />
+                  Total Expenses
+                </div>
+                <div className="text-lg font-bold text-sky-400">KES <AnimatedNumber value={money(stmt?.expenses.total ?? 0)} /></div>
+              </div>
+              <div className="rounded-xl bg-slate-800/40 border border-slate-800 p-3 col-span-2 hover:border-emerald-500/20 transition">
+                <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mb-1">
+                  <DollarSign className="w-3 h-3 text-white" />
+                  Net Profit
+                </div>
+                <div className="text-xl font-bold text-white">
+                  KES <AnimatedNumber value={money((stmt?.income.rental_income ?? 0) - (stmt?.expenses.total ?? 0))} />
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-4" hover={false}>
+            <h2 className="text-sm font-semibold text-white mb-3">Quick Actions</h2>
+            <div className="space-y-1">
+              {[
+                { icon: <DollarSign className="w-4 h-4 text-emerald-400" />, label: "View Payments", target: "payments" },
+                { icon: <Users className="w-4 h-4 text-sky-400" />, label: "Manage Tenants", target: "tenants" },
+                { icon: <TrendingUp className="w-4 h-4 text-purple-400" />, label: "View Reports", target: "reports" },
+              ].map((a, i) => (
+                <motion.a
+                  key={i}
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); window.dispatchEvent(new CustomEvent("navigate", { detail: a.target })); }}
+                  whileHover={{ x: 3 }}
+                  className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-slate-800/40 border border-slate-800 hover:bg-slate-800/70 hover:border-emerald-500/20 transition group"
+                >
+                  <div className="flex items-center gap-2">
+                    {a.icon}
+                    <span className="text-xs text-slate-200">{a.label}</span>
+                  </div>
+                  <ArrowRight className="w-3.5 h-3.5 text-slate-600 group-hover:text-emerald-400 group-hover:translate-x-1 transition" />
+                </motion.a>
+              ))}
+            </div>
+          </Card>
+
+          <Card className="p-4" hover={false}>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-semibold text-white">Occupancy</h2>
+              <span className="text-xl font-bold text-emerald-400"><AnimatedNumber value={occupancyRate} />%</span>
+            </div>
+            <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${occupancyRate}%` }}
+                transition={{ duration: 1, delay: 0.3, ease: "easeOut" }}
+                className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 relative"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-pulse" />
+              </motion.div>
+            </div>
+            <div className="flex justify-between text-[10px] text-slate-500 mt-1.5">
+              <span>{t.occupied} occupied</span>
+              <span>{t.vacant} vacant</span>
+            </div>
+          </Card>
+
+          {/* AI Insights */}
+          <AIAnalytics insights={insights} />
+        </motion.div>
+      </div>
+    </motion.div>
+  );
+}
+
+function AIAnalytics({ insights }: { insights: any }) {
+  if (!insights) return null;
+  return (
+    <motion.div variants={item} className="col-span-2">
+      <div className="rounded-xl bg-gradient-to-br from-slate-800/60 to-slate-900/60 border border-emerald-500/10 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Zap className="w-4 h-4 text-emerald-400" />
+          <h2 className="text-sm font-semibold text-white">AI Insights</h2>
+          <span className="text-[10px] text-slate-500 ml-auto">
+            {new Date(insights.generated_at).toLocaleTimeString()}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 mb-3">
+          <div className="rounded-lg bg-slate-800/40 p-3">
+            <div className="text-[10px] text-slate-500 mb-1">Collection Rate</div>
+            <div className="text-lg font-bold text-emerald-400">
+              {insights.collection_health.current_rate}%
+            </div>
+            <div className="text-[10px] mt-1 flex items-center gap-1">
+              {insights.collection_health.trend === "up" ? (
+                <TrendingUp className="w-3 h-3 text-emerald-400" />
+              ) : insights.collection_health.trend === "down" ? (
+                <TrendingDown className="w-3 h-3 text-red-400" />
+              ) : null}
+              <span className={insights.collection_health.trend_delta > 0 ? "text-emerald-400" : "text-red-400"}>
+                {insights.collection_health.trend_delta > 0 ? "+" : ""}{insights.collection_health.trend_delta}%
+              </span>
+              <span className="text-slate-600">vs last month</span>
+            </div>
+          </div>
+
+          <div className="rounded-lg bg-slate-800/40 p-3">
+            <div className="text-[10px] text-slate-500 mb-1">At-Risk Tenants</div>
+            <div className="text-lg font-bold text-amber-400">{insights.payment_risk.at_risk_count}</div>
+            <div className="text-[10px] text-slate-500 mt-1">may pay late this month</div>
+          </div>
+
+          <div className="rounded-lg bg-slate-800/40 p-3">
+            <div className="text-[10px] text-slate-500 mb-1">Vacancy Impact</div>
+            <div className="text-lg font-bold text-sky-400">{insights.vacancy_risk.vacant_count}</div>
+            <div className="text-[10px] text-slate-500 mt-1">
+              KES {insights.vacancy_risk.potential_revenue_loss.toLocaleString()}/mo lost
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          {insights.insights.map((text: string, i: number) => (
+            <div key={i} className="flex items-start gap-2 text-xs text-slate-400">
+              <AlertTriangle className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
+              <span>{text}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </motion.div>
+  );
+}

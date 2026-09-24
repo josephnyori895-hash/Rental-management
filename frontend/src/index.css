@@ -1,0 +1,21 @@
+@import "./styles/animations.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-slate-950 text-slate-100;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+@layer components {
+  .input {
+    @apply w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm outline-none focus:border-emerald-500;
+  }
+}
