@@ -72,6 +72,8 @@ class Property(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
         PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Optional visual layout metadata; unit/lease/payment records remain canonical.
+    layout_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     units = relationship("Unit", back_populates="property", lazy="selectin")
 

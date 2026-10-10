@@ -13,7 +13,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import List, Optional
 
-from pydantic import PostgresDsn, field_validator
+from pydantic import PostgresDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Repository root, derived from this file's location (backend/app/core/config.py)
@@ -160,6 +160,34 @@ class Settings(BaseSettings):
 
     # ── Encryption ───────────────────────────────────────────────
     ENCRYPTION_KEY: str = "change-me-in-production"
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> "Settings":
+        """Fail closed if production is configured with development secrets."""
+        if self.APP_ENV.strip().lower() != "production":
+            return self
+
+        problems: list[str] = []
+        for name, value in (
+            ("SECRET_KEY", self.SECRET_KEY),
+            ("JWT_SECRET/effective JWT secret", self.effective_jwt_secret),
+        ):
+            if value == "change-me-in-production" or len(value) < 32:
+                problems.append(f"{name} must be set to a unique secret of at least 32 characters")
+
+        if self.ENCRYPTION_KEY == "change-me-in-production":
+            problems.append("ENCRYPTION_KEY must be set to a 64-character hex key")
+        else:
+            try:
+                decoded_key = bytes.fromhex(self.ENCRYPTION_KEY)
+                if len(decoded_key) != 32:
+                    problems.append("ENCRYPTION_KEY must decode to exactly 32 bytes (64 hex characters)")
+            except ValueError:
+                problems.append("ENCRYPTION_KEY must contain only hexadecimal characters")
+
+        if problems:
+            raise ValueError("Invalid production security configuration: " + "; ".join(problems))
+        return self
 
     # ── Computed Properties ──────────────────────────────────────
     @property

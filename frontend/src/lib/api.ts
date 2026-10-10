@@ -33,19 +33,37 @@ async function req(method: string, path: string, body?: any, auth = true) {
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
-    throw new Error(e.detail || "HTTP " + res.status);
+    const detail = e.detail;
+    const message = Array.isArray(detail)
+      ? detail.map((item: { loc?: unknown[]; msg?: string }) => {
+          const field = item.loc?.filter((part) => part !== "body").join(".");
+          return field ? `${field}: ${item.msg || "Invalid value"}` : (item.msg || "Invalid value");
+        }).join("; ")
+      : typeof detail === "string" ? detail : "HTTP " + res.status;
+    throw new Error(message);
   }
   return res.json();
 }
 
 export const loginOwner = (email: string, password: string) =>
   req("POST", "/api/v1/auth/login", { email, password }, false);
+export const registerBusiness = (data: {
+  business_name: string;
+  owner_full_name: string;
+  email: string;
+  password: string;
+  phone?: string;
+}) => req("POST", "/api/v1/auth/register", data, false);
 export const loginCaretaker = (slug: string, pin: string) =>
   req("POST", "/api/v1/auth/pin-login", { slug, pin }, false);
 export const getBoard = () => req("GET", "/api/v1/dashboard/owner/board");
 export const getProperties = () => req("GET", "/api/v1/properties");
 export const getUnits = (pid: string) => req("GET", `/api/v1/properties/${pid}/units`);
 export const getRooms = (pid: string) => req("GET", `/api/v1/properties/${pid}/rooms`);
+export const getPropertyLayout = (pid: string) =>
+  req("GET", `/api/v1/properties/${pid}/layout`);
+export const savePropertyLayout = (pid: string, layout_config: unknown) =>
+  req("PUT", `/api/v1/properties/${pid}/layout`, { layout_config });
 export const enroll = (data: any) => req("POST", "/api/v1/tenants/enroll", data);
 export const simulate = (invoice_id: string, amount: number) =>
   req("POST", "/api/v1/payments/simulate", { invoice_id, amount });
