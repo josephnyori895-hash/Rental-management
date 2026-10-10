@@ -109,7 +109,7 @@ export default function PropertyLayoutExplorer({
     const level = section.levels.find((item) => item.id === placement.level_id);
     return [{ placement, section, level, room, mappedFace }];
   }).sort((a, b) => a.placement.position - b.placement.position);
-  const showCanvas = face === "overview" || (face === "front" && mappedUnitRows.length === 0);
+  const showCanvas = face === "overview" || (face === "front" && !layoutConfig);
 
   return (
     <section className="overflow-hidden">
