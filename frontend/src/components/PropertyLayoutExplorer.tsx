@@ -101,6 +101,14 @@ export default function PropertyLayoutExplorer({
   }, [rooms, query, statusFilter]);
 
   const currentFace = FACES.find((item) => item.id === face) ?? FACES[0];
+  const mappedUnitRows = (layoutConfig?.placements ?? []).flatMap((placement) => {
+    const section = layoutConfig?.sections.find((item) => item.id === placement.section_id);
+    const mappedFace = section?.faces.find((item) => item.id === placement.face_id);
+    const room = rooms.find((item) => item.id === placement.unit_id);
+    if (!section || mappedFace?.orientation !== face || !room) return [];
+    const level = section.levels.find((item) => item.id === placement.level_id);
+    return [{ placement, section, level, room, mappedFace }];
+  }).sort((a, b) => a.placement.position - b.placement.position);
   const showCanvas = face === "overview" || face === "front";
 
   return (
@@ -225,9 +233,20 @@ export default function PropertyLayoutExplorer({
               <MapPinned className="h-5 w-5" />
             </div>
             <h3 className="mt-3 text-sm font-semibold text-white">{currentFace.label} view</h3>
-            <p className="mt-1 max-w-md text-xs leading-5 text-slate-400">
-              This face is ready to map, but unit positions have not been configured for it yet. We won't guess which rooms belong on this side of the building.
-            </p>
+            {mappedUnitRows.length > 0 ? (
+              <div className="mt-4 w-full space-y-3 text-left">
+                {mappedUnitRows.map(({ placement, section, level, room, mappedFace }) => (
+                  <button key={room.id} type="button" onClick={() => onRoomClick(room)} className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/70 p-3 text-left hover:border-emerald-500/40">
+                    <div><p className="text-xs font-semibold text-white">{room.unit_number}</p><p className="mt-1 text-[10px] text-slate-500">{section.name} · {level?.label ?? "Floor not set"} · {mappedFace.label} · position {placement.position}</p></div>
+                    <span className="text-[10px] text-slate-300">{room.tenant_name || "Vacant"}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-1 max-w-md text-xs leading-5 text-slate-400">
+                This face is ready to map, but unit positions have not been configured for it yet. We won't guess which rooms belong on this side of the building.
+              </p>
+            )}
             <div className="mt-4 grid w-full grid-cols-3 gap-2">
               <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
                 <p className="text-[10px] text-slate-500">Units</p>
