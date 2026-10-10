@@ -11,13 +11,13 @@ import {
 } from "lucide-react";
 import BuildingCanvas from "./BuildingCanvas";
 
-type RentLight = "vacant" | "unpaid" | "partial" | "paid" | "overpaid" | string;
+type RentLight = "vacant" | "unpaid" | "partial" | "paid" | "overpaid";
 
 interface UnitRecord {
   id: string;
   unit_number: string;
-  rent_light?: RentLight;
-  monthly_rent?: number;
+  rent_light: RentLight;
+  monthly_rent: number;
   tenant_name?: string | null;
   invoice_balance?: number;
   total_paid?: number;
