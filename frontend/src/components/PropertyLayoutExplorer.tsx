@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownLeft,
   ArrowLeftRight,
@@ -8,8 +8,11 @@ import {
   DoorOpen,
   LayoutGrid,
   MapPinned,
+  Settings2,
 } from "lucide-react";
 import BuildingCanvas from "./BuildingCanvas";
+import PropertyLayoutEditor from "./PropertyLayoutEditor";
+import { getPropertyLayout } from "../lib/api";
 
 type RentLight = "vacant" | "unpaid" | "partial" | "paid" | "overpaid";
 
@@ -32,7 +35,10 @@ interface Floor {
 
 type Face = "overview" | "front" | "back" | "left" | "right" | "directory";
 
+type SavedLayout = { version: 1; building_type: string; sections: { id: string; name: string; kind: string; levels: { id: string; label: string; order: number }[]; faces: { id: string; label: string; orientation: string }[] }[]; placements: { unit_id: string; section_id: string; level_id: string; face_id: string; position: number }[] };
+
 interface Props {
+  propertyId: string;
   floors: Floor[];
   counts: Record<string, number>;
   propertyName?: string;
@@ -63,6 +69,7 @@ const STATUS: Record<string, { label: string; className: string }> = {
 const money = (value?: number) => (value ?? 0).toLocaleString("en-KE", { maximumFractionDigits: 0 });
 
 export default function PropertyLayoutExplorer({
+  propertyId,
   floors,
   counts,
   propertyName,
@@ -75,6 +82,15 @@ export default function PropertyLayoutExplorer({
   const [face, setFace] = useState<Face>("overview");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [layoutConfig, setLayoutConfig] = useState<SavedLayout | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (!propertyId) { setLayoutConfig(null); return; }
+    getPropertyLayout(propertyId).then((result) => { if (active) setLayoutConfig(result?.layout_config ?? null); }).catch(() => { if (active) setLayoutConfig(null); });
+    return () => { active = false; };
+  }, [propertyId]);
 
   const filteredRooms = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -94,9 +110,12 @@ export default function PropertyLayoutExplorer({
           <p className="text-xs font-semibold text-slate-100">{propertyName || "Selected property"}</p>
           <p className="mt-0.5 text-[10px] text-slate-500">Explore the property and open any unit's live records</p>
         </div>
-        <div className="shrink-0 rounded-lg border border-slate-700/70 bg-slate-900/70 px-2.5 py-1.5 text-right">
+        <div className="flex shrink-0 items-center gap-2">
+        {propertyId && <button type="button" onClick={() => setEditorOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-2 text-[10px] font-semibold text-emerald-200"><Settings2 className="h-3.5 w-3.5" /> Configure</button>}
+        <div className="rounded-lg border border-slate-700/70 bg-slate-900/70 px-2.5 py-1.5 text-right">
           <p className="text-xs font-semibold text-white">{totalUnits} units</p>
           <p className="text-[10px] text-slate-500">{occupied ?? 0} occupied</p>
+        </div>
         </div>
       </div>
 
@@ -230,6 +249,7 @@ export default function PropertyLayoutExplorer({
           </div>
         </div>
       )}
+      {editorOpen && propertyId && <PropertyLayoutEditor propertyId={propertyId} rooms={rooms} onClose={() => setEditorOpen(false)} onSaved={(config) => { setLayoutConfig(config); setEditorOpen(false); }} />}
     </section>
   );
 }
