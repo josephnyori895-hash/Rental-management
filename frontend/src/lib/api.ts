@@ -40,6 +40,13 @@ async function req(method: string, path: string, body?: any, auth = true) {
 
 export const loginOwner = (email: string, password: string) =>
   req("POST", "/api/v1/auth/login", { email, password }, false);
+export const registerBusiness = (data: {
+  business_name: string;
+  owner_full_name: string;
+  email: string;
+  password: string;
+  phone?: string;
+}) => req("POST", "/api/v1/auth/register", data, false);
 export const loginCaretaker = (slug: string, pin: string) =>
   req("POST", "/api/v1/auth/pin-login", { slug, pin }, false);
 export const getBoard = () => req("GET", "/api/v1/dashboard/owner/board");
