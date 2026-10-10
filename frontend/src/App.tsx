@@ -171,7 +171,7 @@ export default function App() {
   }, []);
 
   if (!token) {
-    const path = window.location.pathname.replace(/\\/+$/, "") || "/";
+    const path = window.location.pathname.replace(/\/+$/, "") || "/";
     if (path === "/register") return <Register />;
     if (path === "/login") {
       return (
