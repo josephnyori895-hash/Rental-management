@@ -60,6 +60,10 @@ export const getBoard = () => req("GET", "/api/v1/dashboard/owner/board");
 export const getProperties = () => req("GET", "/api/v1/properties");
 export const getUnits = (pid: string) => req("GET", `/api/v1/properties/${pid}/units`);
 export const getRooms = (pid: string) => req("GET", `/api/v1/properties/${pid}/rooms`);
+export const getPropertyLayout = (pid: string) =>
+  req("GET", `/api/v1/properties/${pid}/layout`);
+export const savePropertyLayout = (pid: string, layout_config: unknown) =>
+  req("PUT", `/api/v1/properties/${pid}/layout`, { layout_config });
 export const enroll = (data: any) => req("POST", "/api/v1/tenants/enroll", data);
 export const simulate = (invoice_id: string, amount: number) =>
   req("POST", "/api/v1/payments/simulate", { invoice_id, amount });
