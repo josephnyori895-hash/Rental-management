@@ -91,7 +91,7 @@ def test_production_rejects_default_security_secrets():
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError, match="Invalid production security configuration"):
-        Settings(_env_file=None, APP_ENV="production")
+        Settings(_env_file=None, APP_ENV="production", SECRET_KEY="change-me-in-production", JWT_SECRET=None, ENCRYPTION_KEY="change-me-in-production")
 
 
 def test_production_accepts_explicit_strong_secrets():
