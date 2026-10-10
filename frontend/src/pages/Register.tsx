@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { ArrowLeft, Building2, Loader2 } from "lucide-react";
 import { registerBusiness } from "../lib/api";
+import AnimatedBuildingBackground from "../components/AnimatedBuildingBackground";
 
 export default function Register() {
   const [businessName, setBusinessName] = useState("");
@@ -42,8 +43,9 @@ export default function Register() {
 
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 py-10 text-slate-100">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.13),_transparent_45%)]" />
-      <section className="relative w-full max-w-lg rounded-2xl border border-white/[0.09] bg-slate-900/85 p-6 shadow-2xl shadow-black/40 backdrop-blur-xl sm:p-8">
+      <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.13),_transparent_45%)]" />
+      <AnimatedBuildingBackground />
+      <section className="relative z-10 w-full max-w-lg rounded-2xl border border-white/[0.09] bg-slate-900/85 p-6 shadow-2xl shadow-black/40 backdrop-blur-xl sm:p-8">
         <a href="/" className="mb-7 inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400"><ArrowLeft className="h-4 w-4" /> Back to home</a>
         <div className="mb-6 flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-sky-400 text-slate-950"><Building2 className="h-5 w-5" /></span><div><h1 className="text-xl font-bold">Create your workspace</h1><p className="mt-1 text-sm text-slate-400">Set up your rental business and owner account.</p></div></div>
         <form onSubmit={submit} className="space-y-4" aria-describedby={error ? "register-error" : undefined}>
