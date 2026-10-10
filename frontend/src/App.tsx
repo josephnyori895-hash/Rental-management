@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Login from "./pages/Login";
+import PublicHome from "./pages/PublicHome";
+import Register from "./pages/Register";
 import Overview from "./pages/Overview";
 import Properties from "./pages/Properties";
 import Tenants from "./pages/Tenants";
@@ -169,17 +171,17 @@ export default function App() {
   }, []);
 
   if (!token) {
-    return (
-      <div className="min-h-screen bg-slate-950">
-        <LoginBackground />
-        <Login
-          onLogin={(t) => {
-            setToken(t);
-            setView("overview");
-          }}
-        />
-      </div>
-    );
+    const path = window.location.pathname.replace(/\\/+$/, "") || "/";
+    if (path === "/register") return <Register />;
+    if (path === "/login") {
+      return (
+        <div className="min-h-screen bg-slate-950">
+          <LoginBackground />
+          <Login onLogin={(t) => { setToken(t); setView("overview"); window.history.replaceState({}, "", "/"); }} />
+        </div>
+      );
+    }
+    return <PublicHome />;
   }
 
   const logout = () => { clearToken(); setToken(null); };
