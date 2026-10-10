@@ -9,7 +9,7 @@ const features = [
 
 export default function PublicHome() {
   return (
-    <main className="min-h-screen overflow-hidden bg-slate-950 text-slate-100">
+    <main className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
       <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(16,185,129,0.14),_transparent_42%),radial-gradient(ellipse_at_bottom_left,_rgba(14,165,233,0.10),_transparent_38%)]" />
       <AnimatedBuildingBackground />
       <header className="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-8">
