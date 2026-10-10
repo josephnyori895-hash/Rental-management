@@ -201,7 +201,7 @@ async def get_notification_log(
     business: Business = Depends(get_current_business),
     limit: int = Query(50, le=200),
     offset: int = Query(0, ge=0),
-    status: str | None = Query(None, regex="^(sent|failed|simulated)$"),
+    status: str | None = Query(None, pattern="^(sent|failed|simulated)$"),
 ):
     """View notification history for the business."""
     q = select(NotificationLog).where(

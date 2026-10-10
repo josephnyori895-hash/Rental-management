@@ -3,15 +3,26 @@
 secure/
 backend/.env
 *.log
-
 .env*
-
+# ...but the template must ship, or nobody can set the project up
+!.env.example
 # ── Build artifacts & environments (never commit) ──
 backend/venv/
 backend/venv.py313.bak/
+venv*/
+.venv/
 frontend/node_modules/
 frontend/dist/
 frontend/tsconfig.tsbuildinfo
 __pycache__/
 *.pyc
+
+# ── Local data & tooling caches ────────────────────────────────
+storage/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
 .DS_Store

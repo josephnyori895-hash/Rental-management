@@ -8,8 +8,12 @@ Author:
     OpenAI + Your Team
 
 Purpose:
-    JWT token creation/verification, password hashing,
-    permission enforcement, and role-based access control.
+    JWT token creation/verification and password hashing.
+
+Note:
+    Route authorisation is enforced by the ``require_owner`` dependency in
+    ``app/api/deps.py``. A separate role/permission catalogue used to live here
+    but was never referenced by any route and has been removed.
 """
 
 from __future__ import annotations
@@ -23,7 +27,11 @@ from passlib.context import CryptContext
 from app.core.config import settings
 
 # ── Password Hashing (bcrypt) ───────────────────────────────────
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto",
+    bcrypt__rounds=settings.BCRYPT_ROUNDS,
+)
 
 
 def hash_password(password: str) -> str:
@@ -37,7 +45,6 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 # ── JWT Tokens ──────────────────────────────────────────────────
-
 
 def create_access_token(
     subject: str,
@@ -104,11 +111,12 @@ def decode_token(token: str) -> dict[str, Any]:
     Raises:
         JWTError: If the token is invalid, expired, or missing required claims.
     """
-    # Enforce a single, explicit signing algorithm. python-jose will raise if the
-    # token's ``alg`` is anything other than the configured value (incl. "none").
+    # Must match the key used by create_access_token/create_refresh_token above.
+    # Reading SECRET_KEY here while signing with effective_jwt_secret silently
+    # broke every token whenever JWT_SECRET was set to a different value.
     payload = jwt.decode(
         token,
-        settings.SECRET_KEY,
+        settings.effective_jwt_secret,
         algorithms=[settings.ALGORITHM],
         options={
             "verify_signature": True,
@@ -124,78 +132,3 @@ def decode_token(token: str) -> dict[str, Any]:
         raise JWTError("Token missing required 'sub' claim")
 
     return payload
-
-
-# ── Role Constants ──────────────────────────────────────────────
-
-class Roles:
-    """Centralised role definitions for IMANI."""
-
-    SUPER_ADMIN = "super_admin"
-    OWNER = "owner"
-    MANAGER = "manager"
-    WAITER = "waiter"
-
-    HIERARCHY = {
-        SUPER_ADMIN: 100,
-        OWNER: 80,
-        MANAGER: 50,
-        WAITER: 10,
-        "cashier": 10,
-    }
-
-    @classmethod
-    def has_permission(cls, user_role: str, required_role: str) -> bool:
-        """
-        Check if a user's role has sufficient permissions.
-
-        Args:
-            user_role: The role assigned to the user.
-            required_role: The minimum role required.
-
-        Returns:
-            True if user_role >= required_role in hierarchy.
-        """
-        return cls.HIERARCHY.get(user_role, 0) >= cls.HIERARCHY.get(required_role, 0)
-
-
-# ── Permissions ─────────────────────────────────────────────────
-
-PERMISSIONS = {
-    Roles.OWNER: [
-        "business:read", "business:write",
-        "staff:read", "staff:write", "staff:delete",
-        "catalog:read", "catalog:write", "catalog:delete",
-        "pos:read", "pos:write",
-        "orders:read", "orders:write",
-        "reports:read",
-        "accounting:read", "accounting:write",
-        "inventory:read", "inventory:write",
-        "payments:read", "payments:write",
-        "settings:read", "settings:write",
-        "subscription:read", "subscription:write",
-        "cctv:read",
-        "ai:read",
-    ],
-    Roles.MANAGER: [
-        "business:read",
-        "staff:read",
-        "catalog:read", "catalog:write",
-        "pos:read", "pos:write",
-        "orders:read",
-        "reports:read",
-        "inventory:read", "inventory:write",
-        "payments:read",
-        "cctv:read",
-    ],
-    Roles.WAITER: [
-        "pos:read", "pos:write",
-        "orders:read",
-        "catalog:read",
-    ],
-}
-
-
-def permissions_for_role(role: str) -> list[str]:
-    """Return the list of permissions granted to a given role."""
-    return PERMISSIONS.get(role, [])

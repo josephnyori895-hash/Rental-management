@@ -9,18 +9,24 @@ RENTAL OS — Payments Router
 
 from __future__ import annotations
 
+import hmac
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from app.api.deps import SessionDep, get_current_business, get_current_user
+from app.core.config import settings
+from app.core.ratelimit import callback_limiter, payment_limiter
 from app.models.billing import Invoice, InvoiceStatus, Payment
 from app.models.business import Business, User
 from app.models.tenant import Tenant
 from app.models.property import Unit
 from app.payments import service
 from sqlalchemy import select
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 callback_router = APIRouter(prefix="/payments", tags=["mpesa-callback"])
@@ -42,7 +48,7 @@ class SimulateRequest(BaseModel):
     method: str = "mpesa"
 
 
-@router.post("/mpesa/stk")
+@router.post("/mpesa/stk", dependencies=[Depends(payment_limiter)])
 async def mpesa_stk(
     data: STKRequest,
     session: SessionDep,
@@ -63,7 +69,7 @@ class STKDirectRequest(BaseModel):
     description: str = "Expense Payment"
 
 
-@router.post("/mpesa/stk-direct")
+@router.post("/mpesa/stk-direct", dependencies=[Depends(payment_limiter)])
 async def mpesa_stk_direct(
     data: STKDirectRequest,
     session: SessionDep,
@@ -77,7 +83,7 @@ async def mpesa_stk_direct(
     return {"checkout_request_id": cid, "status": "STK_PUSH_SENT"}
 
 
-@router.post("/record")
+@router.post("/record", dependencies=[Depends(payment_limiter)])
 async def record_payment(
     data: RecordPaymentRequest,
     session: SessionDep,
@@ -99,7 +105,7 @@ async def record_payment(
     }
 
 
-@router.post("/simulate")
+@router.post("/simulate", dependencies=[Depends(payment_limiter)])
 async def simulate(
     data: SimulateRequest,
     session: SessionDep,
@@ -323,8 +329,37 @@ async def get_payment_message(
     return msg
 
 
-@callback_router.post("/mpesa/callback")
-async def mpesa_callback(payload: dict, session: SessionDep):
+def _verify_callback_token(request: Request) -> None:
+    """
+    Safaricom does not sign Daraja callbacks, so the only practical protection is
+    a shared secret carried in the callback URL registered with Daraja.
+
+    Register:  https://<host>/api/v1/payments/mpesa/callback?token=<secret>
+    Set it as MPESA_CALLBACK_SECRET.
+
+    When the secret is unset the check is skipped, so existing deployments keep
+    working; set it before going live.
+    """
+    expected = settings.MPESA_CALLBACK_SECRET
+    if not expected or expected.startswith("change-"):
+        logger.warning(
+            "MPESA_CALLBACK_SECRET is unset or still a placeholder — M-PESA "
+            "callback verification is DISABLED; forged callbacks can mark "
+            "invoices paid. Set a real secret and register the tokenised URL."
+        )
+        return
+    supplied = request.query_params.get("token", "")
+    if not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=403, detail="Invalid callback token")
+
+
+@callback_router.post(
+    "/mpesa/callback", dependencies=[Depends(callback_limiter)]
+)
+async def mpesa_callback(payload: dict, request: Request, session: SessionDep):
+    # Verified before the try block below, which deliberately swallows every
+    # exception so Safaricom always receives a 200 and stops retrying.
+    _verify_callback_token(request)
     try:
         body = (payload.get("Body") or {}).get("stkCallback") or {}
         cid = body.get("CheckoutRequestID")

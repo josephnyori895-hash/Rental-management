@@ -4,6 +4,7 @@ RENTAL OS — Expenses Service
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from uuid import UUID
 
@@ -11,6 +12,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.accounting.service import auto_post_expense
+
+logger = logging.getLogger(__name__)
 from app.models.expense import Expense
 
 
@@ -28,11 +31,16 @@ async def create_expense(session: AsyncSession, business_id: UUID, data: dict) -
     )
     session.add(exp)
     await session.flush()
-    # Auto-post to general ledger
+    # Auto-post to general ledger — best-effort, but never silent. An expense
+    # that exists with no journal entry makes the P&L understate costs, and
+    # that is invisible unless the failure is logged.
     try:
         await auto_post_expense(session, exp)
     except Exception:
-        pass
+        logger.warning(
+            "Ledger posting failed for expense %s (category %r)",
+            exp.id, exp.category, exc_info=True,
+        )
     return _expense_to_dict(exp)
 
 

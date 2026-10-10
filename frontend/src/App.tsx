@@ -7,6 +7,7 @@ import Tenants from "./pages/Tenants";
 import Payments from "./pages/Payments";
 import Maintenance from "./pages/Maintenance";
 import Expenses from "./pages/Expenses";
+import Utilities from "./pages/Utilities";
 import Reports from "./pages/Reports";
 import BooksPage from "./pages/BooksPage";
 import CalendarPage from "./pages/CalendarPage";
@@ -31,7 +32,7 @@ import {
 
 type View =
   | "overview" | "properties" | "tenants" | "payments" | "maintenance"
-  | "expenses" | "reports" | "books" | "calendar" | "history"
+  | "expenses" | "utilities" | "reports" | "books" | "calendar" | "history"
   | "portal" | "settings" | "enroll" | "tenant";
 
 const NAV: { key: View; label: string; icon: React.ReactNode }[] = [
@@ -41,6 +42,7 @@ const NAV: { key: View; label: string; icon: React.ReactNode }[] = [
   { key: "payments", label: "Payments", icon: <CreditCard className="w-4 h-4" /> },
   { key: "maintenance", label: "Maintenance", icon: <Wrench className="w-4 h-4" /> },
   { key: "expenses", label: "Expenses", icon: <Receipt className="w-4 h-4" /> },
+  { key: "utilities", label: "Utilities", icon: <Zap className="w-4 h-4" /> },
   { key: "reports", label: "Reports", icon: <BarChart3 className="w-4 h-4" /> },
   { key: "books", label: "Books", icon: <BookOpen className="w-4 h-4" /> },
   { key: "calendar", label: "Calendar", icon: <Calendar className="w-4 h-4" /> },
@@ -364,6 +366,7 @@ export default function App() {
             {view === "payments" && <Payments />}
             {view === "maintenance" && <Maintenance />}
             {view === "expenses" && <Expenses />}
+            {view === "utilities" && <Utilities />}
             {view === "reports" && <Reports />}
             {view === "books" && <BooksPage />}
             {view === "calendar" && <CalendarPage />}

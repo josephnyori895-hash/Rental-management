@@ -160,6 +160,24 @@ export const getTenants = (params: Record<string, any> = {}) => {
 export const recordPayment = (invoice_id: string, amount: number, method: string = "cash") =>
   req("POST", "/api/v1/payments/record", { invoice_id, amount, method });
 
+// ── Utility billing (tariffs, meter readings, shared-cost apportionment) ──
+export const getUtilityRates = (property_id?: string) =>
+  req("GET", `/api/v1/billing/utilities/rates${property_id ? `?property_id=${property_id}` : ""}`);
+export const saveUtilityRate = (data: any) =>
+  req("POST", "/api/v1/billing/utilities/rates", data);
+export const getMeterReadings = (params: Record<string, any> = {}) => {
+  const q = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") q.set(k, String(v)); });
+  const qs = q.toString();
+  return req("GET", `/api/v1/billing/utilities/readings${qs ? `?${qs}` : ""}`);
+};
+/** Pass `unit_id` for one unit's meter, or `property_id` for the shared meter. */
+export const recordMeterReading = (data: any) =>
+  req("POST", "/api/v1/billing/utilities/readings", data);
+/** Split one shared cost across a property's occupied units. */
+export const billSharedUtility = (data: any) =>
+  req("POST", "/api/v1/billing/utilities/bill-shared", data);
+
 // ── Monthly Report Dispatch ──
 export async function dispatchMonthlyReport(month: string, propertyId?: string): Promise<any> {
   const q = new URLSearchParams({ target_month: month, send_whatsapp: "true" });

@@ -11,7 +11,6 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from app.core.config import settings
 from app.core.database import Base
 
 # ── Import ALL models so they register on Base.metadata ──────────
@@ -25,8 +24,15 @@ from app.models.event import *       # EventLog
 from app.notifications.models import *  # NotificationLog
 from app.documents.models import *  # Document
 
+# Reuse the application's DSN translation, so migrations connect exactly as the
+# app does. A hosted Postgres DSN carries `?sslmode=require`, which SQLAlchemy's
+# asyncpg dialect rejects as an unknown keyword — reading `settings.DATABASE_URL`
+# directly here would make `alembic upgrade head` fail on a deploy while the app
+# itself connected fine.
+from app.core.database import DATABASE_CONNECT_ARGS, DATABASE_URL as _DATABASE_URL
+
 config = context.config
-config.set_main_option("sqlalchemy.url", str(settings.DATABASE_URL))
+config.set_main_option("sqlalchemy.url", _DATABASE_URL)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -57,6 +63,7 @@ async def run_async_migrations() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=DATABASE_CONNECT_ARGS,
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)

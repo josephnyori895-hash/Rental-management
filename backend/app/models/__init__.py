@@ -8,3 +8,10 @@ from app.models.lease import Lease, LeaseStatus
 from app.models.maintenance import MaintenanceTicket, TicketCategory, TicketPriority, TicketStatus
 from app.models.property import Property, PropertyType, Unit, UnitStatus
 from app.models.tenant import Tenant
+from app.models.utilities import (
+    MeterReading,
+    MeterSource,
+    SplitMethod,
+    UtilityRate,
+    UtilityType,
+)

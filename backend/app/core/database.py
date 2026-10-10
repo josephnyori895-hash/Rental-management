@@ -40,13 +40,63 @@ metadata = MetaData(naming_convention=convention)
 
 # ── Engine & Session ────────────────────────────────────────────
 
+# Hosted Postgres poolers answer on a hostname that says so: Neon's is
+# `...-pooler.<region>.aws.neon.tech`, PgBouncer deployments usually similar.
+POOLER_HOST_MARKERS = ("-pooler", "pooler.")
+
+
+def _connect_args_and_url(raw_url: str) -> tuple[dict, str]:
+    """Translate a hosted DSN into asyncpg connection arguments.
+
+    A managed Postgres is reached over TLS, usually behind a connection pooler,
+    and both facts need saying explicitly:
+
+      * asyncpg does not read `sslmode` from a URL, and SQLAlchemy's asyncpg
+        dialect rejects the unknown keyword — so `?sslmode=require` (what every
+        provider hands you) has to become `ssl="require"`.
+      * asyncpg caches prepared statements per connection, which is
+        incompatible with a transaction-mode pooler such as PgBouncer or Neon's
+        pooler: the server may route the same connection elsewhere between
+        statements, and the cached statement then does not exist. A DSN naming
+        a pooler therefore opts out of that cache.
+
+    Returns the connection arguments and the URL with those keys removed.
+    """
+    from sqlalchemy.engine import make_url
+
+    url = make_url(raw_url)
+    query = dict(url.query)
+    connect_args: dict = {}
+
+    sslmode = query.pop("sslmode", None)
+    if sslmode:
+        connect_args["ssl"] = str(sslmode)
+
+    # channel_binding is libpq-only; asyncpg rejects it.
+    query.pop("channel_binding", None)
+
+    host = url.host or ""
+    if "statement_cache_size" in query:
+        connect_args["statement_cache_size"] = int(query.pop("statement_cache_size"))
+    elif any(marker in host for marker in POOLER_HOST_MARKERS):
+        connect_args["statement_cache_size"] = 0
+
+    if not connect_args:
+        return {}, raw_url
+
+    return connect_args, url.set(query=query).render_as_string(hide_password=False)
+
+
+DATABASE_CONNECT_ARGS, DATABASE_URL = _connect_args_and_url(str(settings.DATABASE_URL))
+
 engine = create_async_engine(
-    str(settings.DATABASE_URL),
-    pool_size=50,
-    max_overflow=30,
+    DATABASE_URL,
+    pool_size=settings.DATABASE_POOL_SIZE,
+    max_overflow=settings.DATABASE_MAX_OVERFLOW,
     pool_pre_ping=True,
     echo=settings.DATABASE_ECHO,
     future=True,
+    connect_args=DATABASE_CONNECT_ARGS,
 )
 
 async_session_factory = async_sessionmaker(

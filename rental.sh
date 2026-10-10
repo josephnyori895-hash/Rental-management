@@ -13,14 +13,13 @@ echo "║        Rental OS — Launch v0.1.0         ║"
 echo "╚══════════════════════════════════════════╝"
 
 # ── Clean up old processes ──
-echo "[1/4] Cleaning old processes..."
+echo "[1/3] Cleaning old processes..."
 pkill -f "uvicorn.*rental" 2>/dev/null || true
 pkill -f "vite.*rental" 2>/dev/null || true
-pkill -f "rental_desktop.py" 2>/dev/null || true
 sleep 1
 
 # ── Start backend ──
-echo "[2/4] Starting backend on :8011..."
+echo "[2/3] Starting backend on :8011..."
 cd "$BACKEND_DIR"
 nohup "$BACKEND_DIR/venv/bin/uvicorn" app.main:create_app --factory \
     --host 0.0.0.0 --port 8011 --log-level warning \
@@ -38,7 +37,7 @@ for i in $(seq 1 15); do
 done
 
 # ── Start frontend dev server ──
-echo "[3/4] Starting frontend on :5173..."
+echo "[3/3] Starting frontend on :5173..."
 cd "$FRONTEND_DIR"
 nohup npx vite --host 0.0.0.0 --port 5173 \
     > /tmp/rental_vite.log 2>&1 &
@@ -54,20 +53,14 @@ for i in $(seq 1 15); do
     sleep 1
 done
 
-# ── Launch desktop app ──
-echo "[4/4] Launching desktop app..."
-cd "$SCRIPT_DIR"
-PYTHONUNBUFFERED=1 nohup python3 -u rental_desktop.py \
-    > /tmp/rental_desktop.log 2>&1 &
-DESKTOP_PID=$!
-echo "  Desktop PID: $DESKTOP_PID"
+echo "[4/4] Desktop app removed - web + Android only"
 
-sleep 2
+sleep 1
 echo ""
 echo "╔══════════════════════════════════════════╗"
 echo "║        All systems operational           ║"
 echo "╠══════════════════════════════════════════╣"
-echo "║ Desktop  : Rental OS (1200x800)          ║"
+echo "║ Client   : web browser or Android app     ║"
 echo "║ Web      : http://localhost:5173         ║"
 echo "║ Network  : http://10.42.0.1:5173         ║"
 echo "║ API      : http://localhost:8011/docs    ║"

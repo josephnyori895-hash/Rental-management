@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import datetime
+import logging
 import uuid
 from decimal import Decimal
 
@@ -21,6 +22,8 @@ from app.accounting.service import auto_post_payment
 from app.core.config import settings
 from app.models.billing import Invoice, InvoiceStatus, Payment, PaymentMethod
 from app.models.property import Unit
+
+logger = logging.getLogger(__name__)
 
 
 async def apply_payment(
@@ -55,11 +58,17 @@ async def apply_payment(
         InvoiceStatus.PAID.value if inv.balance <= 0 else InvoiceStatus.PARTIAL.value
     )
     await session.commit()
-    # Auto-post to general ledger
+    # Auto-post to general ledger. Best-effort by design — the money has
+    # already moved, so the payment must stand even if the posting fails. But
+    # it must never fail *quietly*: the ledger silently disagreeing with the
+    # bank is the one condition that has to be audible.
     try:
         await auto_post_payment(session, pay)
     except Exception:
-        pass  # Don't fail the payment if accounting posting fails
+        logger.warning(
+            "Ledger posting failed for payment %s (invoice %s)",
+            pay.id, inv.id, exc_info=True,
+        )
 
     # Send SMS receipt (best-effort, don't block payment)
     try:
@@ -71,7 +80,7 @@ async def apply_payment(
             invoice_status=inv.status,
         )
     except Exception:
-        pass
+        logger.warning("Receipt for payment %s was not sent", pay.id, exc_info=True)
 
     return inv
 

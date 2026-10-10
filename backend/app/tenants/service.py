@@ -2,22 +2,27 @@
 RENTAL OS — Tenant Service
 
 Caretaker enrollment: creates the tenant, assigns the house (unit), opens an
-active lease and raises the first rent invoice (light starts RED until paid).
-After saving, fires a WhatsApp welcome message to the tenant.
+active lease and raises the first rent invoice and any deposit invoice (light
+starts RED until paid), posting both to the ledger. After saving, fires a
+WhatsApp welcome message to the tenant.
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import timedelta
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.accounting.service import auto_post_invoice
 from app.models.billing import Invoice, InvoiceStatus, InvoiceType
 from app.models.lease import Lease, LeaseStatus
 from app.models.property import Property, Unit, UnitStatus
 from app.models.tenant import Tenant
+
+logger = logging.getLogger(__name__)
 
 
 async def enroll_tenant(session: AsyncSession, actor, data) -> dict:
@@ -80,6 +85,7 @@ async def enroll_tenant(session: AsyncSession, actor, data) -> dict:
 
     # ── Deposit invoice (created only when deposit > 0) ──
     deposit = Decimal(str(data.deposit_amount)) if data.deposit_amount else Decimal("0")
+    deposit_invoice: Invoice | None = None
     if deposit > 0:
         deposit_invoice = Invoice(
             business_id=actor.business_id,
@@ -100,6 +106,26 @@ async def enroll_tenant(session: AsyncSession, actor, data) -> dict:
 
     await session.flush()
     await session.commit()
+
+    # ── Post both invoices to the ledger ──
+    # Enrollment is the only path that raises a rent or deposit invoice, and it
+    # raised both without posting either: every tenancy started with invoices
+    # the ledger had never heard of, so the rent roll and the balance sheet
+    # disagreed from day one. Rent credits rental income; the deposit credits
+    # Security Deposits Payable, because a deposit is a liability rather than
+    # revenue (see `accounting.service.credit_account_code`).
+    #
+    # Best-effort — losing an enrollment to a ledger problem would be worse —
+    # but logged, never swallowed.
+    try:
+        await auto_post_invoice(session, invoice)
+        if deposit_invoice is not None:
+            await auto_post_invoice(session, deposit_invoice)
+    except Exception:
+        logger.warning(
+            "Ledger posting failed for enrollment of tenant %s (lease %s)",
+            tenant.id, lease.id, exc_info=True,
+        )
 
     return_data = {
         "tenant_id": str(tenant.id),

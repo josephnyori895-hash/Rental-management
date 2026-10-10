@@ -1,0 +1,17 @@
+# Rental OS — backend development dependencies
+#
+#     backend/venv/bin/pip install -r backend/requirements-dev.txt
+#
+# These are intentionally ranged rather than pinned; pin them once
+# installed if you want a fully reproducible toolchain:
+#     backend/venv/bin/pip freeze > backend/requirements-dev.lock.txt
+
+-r requirements.txt
+
+# ── Testing ──────────────────────────────────────────────────────
+pytest>=8.3
+pytest-asyncio>=0.24
+# httpx is already pinned in requirements.txt (used by the ASGI test client)
+
+# ── Lint / format ────────────────────────────────────────────────
+ruff>=0.9

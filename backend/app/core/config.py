@@ -2,7 +2,9 @@
 IMANI Business OS — Production Foundation Configuration
 
 Central configuration for all IMANI services.
-Supports multi-environment setup via .env.development / .env.staging / .env.production.
+Values are read from a single ``.env`` file (and the process environment),
+which is resolved relative to the current working directory — start the
+backend from ``backend/``.
 """
 
 from __future__ import annotations
@@ -14,11 +16,16 @@ from typing import List, Optional
 from pydantic import PostgresDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Repository root, derived from this file's location (backend/app/core/config.py)
+# so that default paths work on any machine instead of being absolute.
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
 
 class Settings(BaseSettings):
     """
     Application settings loaded from environment variables.
-    Supports .env.development, .env.staging, .env.production.
+    Every field can be overridden by an environment variable of the same name
+    (case-insensitive) or by an entry in the ``.env`` file.
     """
 
     model_config = SettingsConfigDict(
@@ -35,6 +42,12 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api/v1"
     APP_ENV: str = "development"  # development | staging | production
     LOG_LEVEL: str = "DEBUG"
+    # Serve the built frontend from this API. On by default because the product
+    # is same-origin (the SPA fetches relative `/api/...` paths), so one service
+    # can host everything. Set false to run the API alone — a staging API, a
+    # frontend hosted elsewhere, or a test run that must not depend on whether a
+    # build happens to be present.
+    SERVE_FRONTEND: bool = True
 
     # Backward compat: ENVIRONMENT = APP_ENV
     @property
@@ -65,9 +78,6 @@ class Settings(BaseSettings):
     DATABASE_POOL_SIZE: int = 30
     DATABASE_MAX_OVERFLOW: int = 5
     DATABASE_ECHO: bool = False
-
-    # ── Redis ────────────────────────────────────────────────────
-    REDIS_URL: str = "redis://localhost:6379/0"
 
     # ── CORS ─────────────────────────────────────────────────────
     CORS_ORIGINS: List[str] = [
@@ -133,35 +143,16 @@ class Settings(BaseSettings):
         return self.MPESA_ENVIRONMENT
 
     # ── Storage ──────────────────────────────────────────────────
-    STORAGE_BACKEND: str = "local"  # local | gdrive | s3
-    STORAGE_LOCAL_PATH: Path = Path("/home/nyorii/Projects/rental-os/storage")
-    GOOGLE_DRIVE_CLIENT_ID: str = ""
-    GOOGLE_DRIVE_CLIENT_SECRET: str = ""
-
-    # ── CCTV ─────────────────────────────────────────────────────
-    CCTV_STORAGE_PATH: Path = Path("/data/imani/cctv")
-    CCTV_RETAIN_DAYS: int = 30
-
-    # ── AI ───────────────────────────────────────────────────────
-    OLLAMA_BASE_URL: str = "http://localhost:11434"
-    AI_MODEL: str = "imani:latest"
-    OPENAI_API_KEY: str = ""
-
-    # ── Email ────────────────────────────────────────────────────
-    SMTP_HOST: str = ""
-    SMTP_PORT: int = 587
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""
-    EMAIL_FROM: str = "noreply@imani.co.ke"
+    # Local filesystem root for uploaded documents (see documents/service.py).
+    STORAGE_LOCAL_PATH: Path = PROJECT_ROOT / "storage"
 
     # ── Rate Limiting ────────────────────────────────────────────
+    # Consumed by the shared limiters in app/core/ratelimit.py.
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_LOGIN_PER_MINUTE: int = 5
 
     # ── Business Defaults ────────────────────────────────────────
-    DEFAULT_CURRENCY: str = "KES"
     DEFAULT_TAX_RATE: float = 0.16  # 16% VAT
-    TRIAL_DAYS: int = 14
 
     # ── Encryption ───────────────────────────────────────────────
     ENCRYPTION_KEY: str = "change-me-in-production"

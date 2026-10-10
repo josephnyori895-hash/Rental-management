@@ -5,6 +5,7 @@ Chart of Accounts provisioning, journal posting, trial balance, P&L, balance she
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -16,6 +17,63 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.accounting.models import AccountType, ChartOfAccount, JournalEntry
+from app.models.billing import InvoiceType
+
+logger = logging.getLogger(__name__)
+
+# Expense category → the account it posts to. Kept beside `DEFAULT_COA`
+# rather than inline because the test suite cross-checks every code here
+# against the accounts the application actually provisions.
+EXPENSE_ACCOUNT_CODES: dict[str, str] = {
+    "repairs": "5000", "utilities": "5010", "water": "5010", "electricity": "5020",
+    "wifi": "5080", "internet": "5080", "cleaning": "5050", "security": "5040",
+    "garbage": "5050", "supplies": "5090", "salary": "5030", "wages": "5030",
+    "tax": "5070", "insurance": "5060", "marketing": "5100", "advertising": "5100",
+    "legal": "5110", "professional": "5110",
+}
+
+# An uncategorised expense is "Supplies & Sundry".
+DEFAULT_EXPENSE_CODE = "5090"
+
+# ── Invoices that are liabilities, not revenue ──────────────────────────
+#
+# A security deposit is money the business holds on the tenant's behalf. It is
+# never income: crediting it to a revenue account overstates profit, understates
+# the liability, and quietly borrows against a repayment the operator has to make
+# at the end of the tenancy. So a deposit invoice credits the deposits-payable
+# account instead.
+#
+# The debit stays on receivables either way — the tenant owes the deposit until
+# they pay it, and `auto_post_payment` clears it from there. That keeps the three
+# moments of a deposit consistent:
+#
+#   invoice raised    Dr 1100 Tenant Receivables   / Cr 2100 Deposits Payable
+#   deposit paid      Dr 1000 Cash                / Cr 1100 Tenant Receivables
+#   deposit refunded  Dr 2100 Deposits Payable    / Cr 1000 Cash
+#
+# The refund leg has no write path yet (`DepositRefund` is read by the tenant
+# detail endpoint but nothing creates one), so it is documented rather than
+# wired; the entry above is the one to post when it is built.
+DEPOSIT_LIABILITY_CODE = "2100"
+
+LIABILITY_INVOICE_CODES: dict[str, str] = {
+    InvoiceType.DEPOSIT.value: DEPOSIT_LIABILITY_CODE,
+}
+
+
+def credit_account_code(invoice_type: str | None, income_code: str) -> str:
+    """The account an invoice credits — a liability account, or the income one.
+
+    The match is case-insensitive and trimmed because `invoice_type` is
+    *persisted data*: `POST /billing/bills` stored it verbatim from free text
+    before that field was validated, so historic rows may read "Deposit" or
+    " deposit ". A deposit must find its liability account however it was
+    spelled, rather than quietly posting to rental income.
+    """
+    return LIABILITY_INVOICE_CODES.get(
+        str(invoice_type or "").strip().lower(), income_code
+    )
+
 
 # ── Default Kenyan COA ──────────────────────────────────────────────────
 # Each tuple: (code, name, type, category, is_system, sort_order, description)
@@ -223,7 +281,6 @@ async def profit_and_loss(
         "total_income": total_income,
         "total_expenses": total_expenses,
         "net_profit": net_profit,
-        "total_income": total_income,
     }
 
 
@@ -256,20 +313,47 @@ async def balance_sheet(
 
 # ── Auto-posting hooks ──────────────────────────────────────────────
 
-async def auto_post_invoice(session: AsyncSession, invoice: Any) -> None:
-    """When an invoice is created: Dr Tenant Receivables / Cr Rental Income."""
+async def auto_post_invoice(
+    session: AsyncSession, invoice: Any, income_code: str = "4000"
+) -> None:
+    """When an invoice is created: Dr Tenant Receivables / Cr Income.
+
+    `income_code` selects the revenue account, so a water bill is reported as
+    utility income rather than as rent. Callers should use
+    `app.billing.utilities.income_code_for` rather than hardcoding a code.
+
+    Deposit invoices are the exception: they credit the deposits-payable
+    liability, not income, whatever `income_code` says — see
+    `credit_account_code`.
+
+    A missing account is logged and skipped rather than raised: an invoice
+    that exists without a journal entry is recoverable, whereas refusing to
+    raise the invoice at all is not.
+    """
     biz_id = invoice.business_id
     prop_id = invoice.property_id
+    credit_code = credit_account_code(
+        getattr(invoice, "invoice_type", None), income_code
+    )
     recv_id = await get_account_id_by_code(session, biz_id, "1100")
-    income_id = await get_account_id_by_code(session, biz_id, "4000")
-    if not recv_id or not income_id:
+    credit_id = await get_account_id_by_code(session, biz_id, credit_code)
+    if not recv_id or not credit_id:
+        # This used to `return` silently, which is how an entire
+        # misconfigured revenue account went unnoticed: the invoice was
+        # created, the tenant was billed, and the ledger simply had no
+        # entry. Never let that happen quietly again.
+        logger.warning(
+            "Not posting journal entry for invoice %s: could not resolve "
+            "accounts for business %s (receivable 1100=%s, credit %s=%s)",
+            getattr(invoice, "id", None), biz_id, recv_id, credit_code, credit_id,
+        )
         return
 
     await post_journal_entry(
         session, biz_id,
         entries=[
             {"account_id": recv_id, "debit": float(invoice.amount), "credit": 0, "property_id": prop_id},
-            {"account_id": income_id, "debit": 0, "credit": float(invoice.amount), "property_id": prop_id},
+            {"account_id": credit_id, "debit": 0, "credit": float(invoice.amount), "property_id": prop_id},
         ],
         entry_date=invoice.created_at.date() if hasattr(invoice.created_at, "date") else date.today(),
         description=f"Invoice {invoice.invoice_number or ''} — {invoice.tenant_id}",
@@ -280,11 +364,21 @@ async def auto_post_invoice(session: AsyncSession, invoice: Any) -> None:
 
 
 async def auto_post_payment(session: AsyncSession, payment: Any) -> None:
-    """When a payment is received: Dr Cash/Bank / Cr Tenant Receivables."""
+    """When a payment is received: Dr Cash/Bank / Cr Tenant Receivables.
+
+    A missing account is logged and skipped, never dropped in silence — the
+    money moved, so the ledger disagreeing with the bank is the one condition
+    that must always be audible.
+    """
     biz_id = payment.business_id
     cash_id = await get_account_id_by_code(session, biz_id, "1000")
     recv_id = await get_account_id_by_code(session, biz_id, "1100")
     if not cash_id or not recv_id:
+        logger.warning(
+            "Not posting journal entry for payment %s: could not resolve "
+            "accounts for business %s (cash 1000=%s, receivable 1100=%s)",
+            getattr(payment, "id", None), biz_id, cash_id, recv_id,
+        )
         return
 
     await post_journal_entry(
@@ -302,20 +396,29 @@ async def auto_post_payment(session: AsyncSession, payment: Any) -> None:
 
 
 async def auto_post_expense(session: AsyncSession, expense: Any) -> None:
-    """When an expense is recorded: Dr Expense category / Cr Cash/Bank."""
+    """When an expense is recorded: Dr Expense category / Cr Cash/Bank.
+
+    A missing account is logged and skipped, never dropped in silence. Note
+    that `EXPENSE_ACCOUNT_CODES` is a second, *indirect* table of account codes
+    — the lookup below passes a variable, not a literal, so it is easy for a
+    category to be added here pointing at an account no business has. The test
+    suite asserts every code in that table is provisioned, for exactly that
+    reason.
+    """
     biz_id = expense.business_id
     cash_id = await get_account_id_by_code(session, biz_id, "1000")
-    # Map expense category to COA code
-    code_map = {
-        "repairs": "5000", "utilities": "5010", "water": "5010", "electricity": "5020",
-        "wifi": "5080", "internet": "5080", "cleaning": "5050", "security": "5040",
-        "garbage": "5050", "supplies": "5090", "salary": "5030", "wages": "5030",
-        "tax": "5070", "insurance": "5060", "marketing": "5100", "advertising": "5100",
-        "legal": "5110", "professional": "5110",
-    }
-    expense_code = code_map.get(expense.category, "5090")  # default to supplies
+    expense_code = EXPENSE_ACCOUNT_CODES.get(
+        expense.category, DEFAULT_EXPENSE_CODE
+    )
     expense_acct_id = await get_account_id_by_code(session, biz_id, expense_code)
     if not cash_id or not expense_acct_id:
+        logger.warning(
+            "Not posting journal entry for expense %s: could not resolve "
+            "accounts for business %s (cash 1000=%s, expense %s=%s, "
+            "category=%r)",
+            getattr(expense, "id", None), biz_id, cash_id, expense_code,
+            expense_acct_id, getattr(expense, "category", None),
+        )
         return
 
     await post_journal_entry(

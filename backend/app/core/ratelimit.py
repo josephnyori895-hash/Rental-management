@@ -17,6 +17,8 @@ from typing import Dict, Deque
 
 from fastapi import HTTPException, Request, status
 
+from app.core.config import settings
+
 
 class RateLimiter:
     """
@@ -65,7 +67,14 @@ class RateLimiter:
 
 
 # ── Shared limiters ──────────────────────────────────────────────
-# Tuned for single-store launch traffic. Adjust after load testing.
-login_limiter = RateLimiter(times=10, seconds=60)        # brute-force protection
-payment_limiter = RateLimiter(times=30, seconds=60)      # money-movement protection
-callback_limiter = RateLimiter(times=120, seconds=60)    # Safaricom retries
+# Limits come from config (RATE_LIMIT_*), which was previously declared but
+# ignored in favour of the literals below.
+login_limiter = RateLimiter(
+    times=settings.RATE_LIMIT_LOGIN_PER_MINUTE, seconds=60
+)                                                        # brute-force protection
+payment_limiter = RateLimiter(
+    times=settings.RATE_LIMIT_PER_MINUTE, seconds=60
+)                                                        # money-movement protection
+callback_limiter = RateLimiter(
+    times=settings.RATE_LIMIT_PER_MINUTE * 2, seconds=60
+)                                                        # Safaricom retries
