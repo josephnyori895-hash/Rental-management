@@ -33,7 +33,14 @@ async function req(method: string, path: string, body?: any, auth = true) {
   });
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
-    throw new Error(e.detail || "HTTP " + res.status);
+    const detail = e.detail;
+    const message = Array.isArray(detail)
+      ? detail.map((item: { loc?: unknown[]; msg?: string }) => {
+          const field = item.loc?.filter((part) => part !== "body").join(".");
+          return field ? `${field}: ${item.msg || "Invalid value"}` : (item.msg || "Invalid value");
+        }).join("; ")
+      : typeof detail === "string" ? detail : "HTTP " + res.status;
+    throw new Error(message);
   }
   return res.json();
 }
