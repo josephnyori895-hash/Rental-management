@@ -12,7 +12,7 @@ export default function AnimatedBuildingBackground() {
   const reduceMotion = useReducedMotion();
 
   return (
-    <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
       <motion.div
         className="absolute -right-24 top-12 h-72 w-72 rounded-full bg-emerald-400/[0.08] blur-3xl sm:right-8 sm:top-20 sm:h-96 sm:w-96"
         animate={reduceMotion ? undefined : { x: [0, -12, 0], y: [0, 14, 0], scale: [1, 1.05, 1] }}
