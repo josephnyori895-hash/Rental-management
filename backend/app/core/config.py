@@ -33,6 +33,10 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
+        # Render-style env vars arrive as plain comma-separated strings, not
+        # JSON arrays. Disable pydantic-settings' JSON decoding of complex
+        # types so the mode="before" validator receives the raw string.
+        enable_decoding=False,
     )
 
     # ── Application ──────────────────────────────────────────────
