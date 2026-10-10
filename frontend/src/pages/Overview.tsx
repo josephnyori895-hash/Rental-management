@@ -8,7 +8,7 @@ import {
 import { getBoard, getMaintenanceSummary, getOwnerStatement, getRooms } from "../lib/api";
 import { Card, Badge, money, AnimatedNumber, Sparkline } from "../components/ui";
 import { getToken } from "../lib/api";
-import BuildingCanvas from "../components/BuildingCanvas";
+import PropertyLayoutExplorer from "../components/PropertyLayoutExplorer";
 import TenantDetailModal from "../components/TenantDetailModal";
 
 interface PaymentEvent {
@@ -237,19 +237,21 @@ export default function Overview() {
             </div>
             {rooms.length > 0 ? (
               <>
-                <BuildingCanvas
+                <PropertyLayoutExplorer
+                  key={selectedProp}
                   floors={floors}
                   counts={counts}
                   propertyName={hostel?.name}
                   totalUnits={rooms.length}
                   occupied={hostel?.occupied}
-                   onRoomClick={(r) => {
-                     if (r.tenant_name) {
-                       window.dispatchEvent(new CustomEvent("open-tenant-page", { detail: r }));
-                     } else {
-                       setActiveRoom(activeRoom === r.id ? null : r.id);
-                     }
-                   }}
+                  rooms={rooms}
+                  onRoomClick={(r) => {
+                    if (r.tenant_name) {
+                      window.dispatchEvent(new CustomEvent("open-tenant-page", { detail: r }));
+                    } else {
+                      setActiveRoom(activeRoom === r.id ? null : r.id);
+                    }
+                  }}
                   activeRoomId={activeRoom}
                 />
                 <div className="border-t border-white/[0.04] bg-slate-900/40 backdrop-blur-sm px-4 py-2.5 flex items-center justify-between text-[10px]">
