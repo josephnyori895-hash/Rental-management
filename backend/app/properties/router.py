@@ -4,7 +4,8 @@ RENTAL OS — Properties (Hostels) Router
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from uuid import UUID
 from sqlalchemy import select, func
 from datetime import date
 
@@ -14,7 +15,7 @@ from app.models.property import Property, Unit
 from app.models.tenant import Tenant
 from app.models.lease import Lease
 from app.models.billing import Invoice, InvoiceStatus
-from app.properties.schemas import PropertyOut, UnitOut, UnitRoomOut
+from app.properties.schemas import PropertyLayoutUpdate, PropertyOut, UnitOut, UnitRoomOut
 
 router = APIRouter(prefix="/properties", tags=["properties"])
 
@@ -147,3 +148,63 @@ async def list_units(
         )
     ).all()
     return rows
+
+
+@router.get("/{property_id}/layout")
+async def get_property_layout(
+    property_id: UUID,
+    user: User = Depends(get_current_user),
+    session: SessionDep = None,
+):
+    """Return saved visual layout metadata without changing rental records."""
+    prop = await session.scalar(
+        select(Property).where(
+            Property.id == property_id,
+            Property.business_id == user.business_id,
+            Property.is_deleted.is_(False),
+        )
+    )
+    if prop is None:
+        raise HTTPException(status_code=404, detail="Property not found")
+    return {"property_id": str(prop.id), "layout_config": prop.layout_config}
+
+
+@router.put("/{property_id}/layout")
+async def save_property_layout(
+    property_id: UUID,
+    payload: PropertyLayoutUpdate,
+    user: User = Depends(get_current_user),
+    session: SessionDep = None,
+):
+    """Save validated face/floor/section mappings for units owned by this property."""
+    prop = await session.scalar(
+        select(Property).where(
+            Property.id == property_id,
+            Property.business_id == user.business_id,
+            Property.is_deleted.is_(False),
+        )
+    )
+    if prop is None:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    unit_ids = [placement.unit_id for placement in payload.layout_config.placements]
+    if unit_ids:
+        owned_units = set(
+            (await session.scalars(
+                select(Unit.id).where(
+                    Unit.id.in_(unit_ids),
+                    Unit.property_id == prop.id,
+                    Unit.business_id == user.business_id,
+                    Unit.is_deleted.is_(False),
+                )
+            )).all()
+        )
+        if owned_units != set(unit_ids):
+            raise HTTPException(
+                status_code=422,
+                detail="Every placed unit must belong to this property and business",
+            )
+
+    prop.layout_config = payload.layout_config.model_dump(mode="json")
+    await session.flush()
+    return {"property_id": str(prop.id), "layout_config": prop.layout_config}
