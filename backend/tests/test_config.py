@@ -84,3 +84,36 @@ def test_database_url_is_async():
 
 def test_paths_are_path_objects():
     assert isinstance(_defaults().STORAGE_LOCAL_PATH, Path)
+
+
+def test_production_rejects_default_security_secrets():
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="Invalid production security configuration"):
+        Settings(_env_file=None, APP_ENV="production")
+
+
+def test_production_accepts_explicit_strong_secrets():
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="production",
+        SECRET_KEY="s" * 48,
+        JWT_SECRET="j" * 48,
+        ENCRYPTION_KEY="ab" * 32,
+    )
+    assert settings.effective_jwt_secret == "j" * 48
+
+
+def test_production_rejects_malformed_encryption_key():
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="ENCRYPTION_KEY"):
+        Settings(
+            _env_file=None,
+            APP_ENV="production",
+            SECRET_KEY="s" * 48,
+            JWT_SECRET="j" * 48,
+            ENCRYPTION_KEY="not-a-hex-key",
+        )
