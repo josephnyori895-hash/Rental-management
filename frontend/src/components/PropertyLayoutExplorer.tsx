@@ -18,10 +18,10 @@ interface UnitRecord {
   unit_number: string;
   rent_light: RentLight;
   monthly_rent: number;
-  tenant_name?: string | null;
+  tenant_name?: string;
   invoice_balance?: number;
   total_paid?: number;
-  condition_notes?: string | null;
+  condition_notes?: string;
   status?: string;
 }
 
