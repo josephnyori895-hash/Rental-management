@@ -1,4 +1,5 @@
 import { Building2, CheckCircle2, ClipboardList, CreditCard, ShieldCheck, ArrowRight } from "lucide-react";
+import AnimatedBuildingBackground from "../components/AnimatedBuildingBackground";
 
 const features = [
   { icon: Building2, title: "Know every unit", text: "See properties, units, occupancy and tenant details in one organised workspace." },
@@ -9,8 +10,9 @@ const features = [
 export default function PublicHome() {
   return (
     <main className="min-h-screen overflow-hidden bg-slate-950 text-slate-100">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(16,185,129,0.14),_transparent_42%),radial-gradient(ellipse_at_bottom_left,_rgba(14,165,233,0.10),_transparent_38%)]" />
-      <header className="relative mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-8">
+      <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(16,185,129,0.14),_transparent_42%),radial-gradient(ellipse_at_bottom_left,_rgba(14,165,233,0.10),_transparent_38%)]" />
+      <AnimatedBuildingBackground />
+      <header className="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-8">
         <a href="/" className="flex items-center gap-3 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400" aria-label="Rental OS home">
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-sky-400 text-slate-950 shadow-lg shadow-emerald-500/20"><Building2 className="h-5 w-5" /></span>
           <span><span className="block text-base font-bold tracking-tight">Rental OS</span><span className="block text-xs text-slate-500">Property management</span></span>
@@ -21,7 +23,7 @@ export default function PublicHome() {
         </nav>
       </header>
 
-      <section className="relative mx-auto grid max-w-7xl items-center gap-12 px-5 pb-20 pt-12 sm:px-8 md:grid-cols-[1.05fr_0.95fr] md:pb-28 md:pt-20">
+      <section className="relative z-10 mx-auto grid max-w-7xl items-center gap-12 px-5 pb-20 pt-12 sm:px-8 md:grid-cols-[1.05fr_0.95fr] md:pb-28 md:pt-20">
         <div>
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/[0.08] px-3 py-1.5 text-xs font-medium text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> A clearer way to run rentals</div>
           <h1 className="max-w-2xl text-4xl font-bold leading-tight tracking-tight sm:text-5xl lg:text-6xl">Your properties.<br /><span className="bg-gradient-to-r from-emerald-300 to-sky-300 bg-clip-text text-transparent">One clear picture.</span></h1>
@@ -52,13 +54,13 @@ export default function PublicHome() {
         </div>
       </section>
 
-      <section className="relative border-t border-white/[0.06] bg-slate-900/35">
+      <section className="relative z-10 border-t border-white/[0.06] bg-slate-900/35">
         <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 md:py-20">
           <div className="max-w-xl"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">Made for the work behind the keys</p><h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">Less scattered admin. More control.</h2><p className="mt-3 leading-6 text-slate-400">Keep everyday property work in one place, with a dashboard designed to make the next step easier to find.</p></div>
           <div className="mt-8 grid gap-4 md:grid-cols-3">{features.map(({icon:Icon,title,text})=><article key={title} className="rounded-2xl border border-white/[0.08] bg-slate-900/70 p-5"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-400/10 text-emerald-300"><Icon className="h-5 w-5" /></span><h3 className="mt-4 font-semibold">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-400">{text}</p></article>)}</div>
         </div>
       </section>
-      <footer className="relative border-t border-white/[0.06] px-5 py-6 text-center text-xs text-slate-600">Rental OS · Property management workspace</footer>
+      <footer className="relative z-10 border-t border-white/[0.06] px-5 py-6 text-center text-xs text-slate-600">Rental OS · Property management workspace</footer>
     </main>
   );
 }
