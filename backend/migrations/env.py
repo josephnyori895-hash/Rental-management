@@ -32,7 +32,12 @@ from app.documents.models import *  # Document
 from app.core.database import DATABASE_CONNECT_ARGS, DATABASE_URL as _DATABASE_URL
 
 config = context.config
-config.set_main_option("sqlalchemy.url", _DATABASE_URL)
+
+# configparser treats `%` as interpolation syntax, and hosted DSNs routinely
+# contain percent-encoded characters (e.g. `%3C` in an unredacted password or
+# `%40` for a literal `@` in Neon credentials). Disabling interpolation stops
+# set_main_option from raising ValueError on them.
+config.set_main_option("sqlalchemy.url", _DATABASE_URL.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
