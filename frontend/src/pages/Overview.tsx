@@ -239,6 +239,7 @@ export default function Overview() {
               <>
                 <PropertyLayoutExplorer
                   key={selectedProp}
+                  propertyId={selectedProp ?? ""}
                   floors={floors}
                   counts={counts}
                   propertyName={hostel?.name}
