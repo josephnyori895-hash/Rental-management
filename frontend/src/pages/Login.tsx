@@ -1,113 +1,75 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { loginOwner, setToken } from "../lib/api";
 import { Building2, Key, Loader2 } from "lucide-react";
 
 export default function Login({ onLogin }: { onLogin: (t: string) => void }) {
-  const [email, setEmail] = useState("owner@rental.dev");
-  const [password, setPassword] = useState("rental1234");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const registered = new URLSearchParams(window.location.search).get("registered") === "1";
 
-  const submit = async (e: any) => {
-    e.preventDefault();
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setErr("");
     setLoading(true);
     try {
-      const r = await loginOwner(email, password);
-      setToken(r.access_token);
-      onLogin(r.access_token);
-    } catch (e: any) {
-      setErr(e.message);
+      const result = await loginOwner(email.trim(), password);
+      setToken(result.access_token);
+      onLogin(result.access_token);
+    } catch (cause) {
+      setErr(cause instanceof Error ? cause.message : "Sign in failed. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative">
+    <div className="relative flex min-h-screen items-center justify-center px-4 py-8">
       <motion.form
         onSubmit={submit}
-        initial={{ opacity: 0, y: 30, scale: 0.95 }}
+        aria-describedby={err ? "login-error" : undefined}
+        initial={{ opacity: 0, y: 24, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ type: "spring", stiffness: 100, damping: 15 }}
-        className="relative w-full max-w-sm bg-slate-900/60 backdrop-blur-2xl border border-white/[0.08] rounded-2xl p-6 space-y-4 shadow-2xl shadow-black/50 overflow-hidden"
+        transition={{ type: "spring", stiffness: 100, damping: 16 }}
+        className="relative w-full max-w-sm space-y-5 overflow-hidden rounded-2xl border border-white/[0.08] bg-slate-900/80 p-6 shadow-2xl shadow-black/50 backdrop-blur-2xl sm:p-7"
       >
-        <div className="absolute inset-0 bg-gradient-to-br from-white/[0.04] to-transparent pointer-events-none" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/[0.04] to-transparent" />
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-400/50 to-transparent" />
-
-        <div className="relative text-center mb-2">
-          <motion.div
-            initial={{ scale: 0, rotate: -180 }}
-            animate={{ scale: 1, rotate: 0 }}
-            transition={{ type: "spring", stiffness: 200, delay: 0.1 }}
-            className="w-14 h-14 bg-gradient-to-br from-emerald-400 to-sky-400 rounded-xl flex items-center justify-center mx-auto mb-3 shadow-lg shadow-emerald-500/30 relative overflow-hidden"
-          >
-            <div className="absolute inset-0 bg-gradient-to-br from-transparent via-white/20 to-transparent animate-aurora-shift" />
-            <Building2 className="w-7 h-7 text-slate-950 relative z-10" />
+        <div className="relative mb-2 text-center">
+          <motion.div initial={{ scale: 0.85 }} animate={{ scale: 1 }} className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-sky-400 shadow-lg shadow-emerald-500/20">
+            <Building2 className="h-7 w-7 text-slate-950" />
           </motion.div>
-          <h1 className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-sky-400 bg-clip-text text-transparent">
-            Rental OS
-          </h1>
-          <p className="text-[11px] text-slate-500 mt-0.5">Owner Console · Property Management</p>
+          <h1 className="text-xl font-bold tracking-tight">Welcome back</h1>
+          <p className="mt-1 text-xs text-slate-400">Rental OS · Owner workspace</p>
         </div>
 
-        <div className="relative space-y-3">
-          <div className="space-y-1">
-            <label className="text-[10px] uppercase tracking-wider text-slate-500">Email</label>
-            <input
-              className="input"
-              placeholder="owner@email.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
+        {registered && <p role="status" className="relative rounded-lg border border-emerald-400/20 bg-emerald-400/[0.08] px-3 py-2.5 text-sm text-emerald-200">Your workspace was created. Sign in with your new account.</p>}
+
+        <div className="relative space-y-4">
+          <div className="space-y-1.5">
+            <label htmlFor="login-email" className="block text-sm font-medium text-slate-300">Email address</label>
+            <input id="login-email" name="email" className="input min-h-11" type="email" autoComplete="username" inputMode="email" placeholder="you@example.com" value={email} onChange={event => setEmail(event.target.value)} required />
           </div>
-          <div className="space-y-1">
-            <label className="text-[10px] uppercase tracking-wider text-slate-500">Password</label>
-            <input
-              className="input"
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+          <div className="space-y-1.5">
+            <label htmlFor="login-password" className="block text-sm font-medium text-slate-300">Password</label>
+            <input id="login-password" name="password" className="input min-h-11" type="password" autoComplete="current-password" placeholder="Enter your password" value={password} onChange={event => setPassword(event.target.value)} required />
           </div>
         </div>
 
         <AnimatePresence>
-          {err && (
-            <motion.p
-              initial={{ opacity: 0, y: -5 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className="relative text-rose-400 text-sm flex items-center gap-1.5"
-            >
-              <Key className="w-3 h-3" /> {err}
-            </motion.p>
-          )}
+          {err && <motion.p id="login-error" role="alert" aria-live="polite" initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="relative flex items-start gap-2 rounded-lg border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2.5 text-sm text-rose-300"><Key className="mt-0.5 h-4 w-4 shrink-0" />{err}</motion.p>}
         </AnimatePresence>
 
-        <motion.button
-          whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.99 }}
-          disabled={loading}
-          className="relative w-full bg-gradient-to-r from-emerald-500 to-emerald-600 text-slate-950 font-semibold py-2.5 rounded-lg hover:from-emerald-400 hover:to-emerald-500 transition-all duration-200 shadow-lg shadow-emerald-500/20 disabled:opacity-60 flex items-center justify-center gap-2"
-        >
-          {loading ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Signing in...
-            </>
-          ) : (
-            "Sign in"
-          )}
-        </motion.button>
-
-        <p className="relative text-[10px] text-slate-600 text-center leading-relaxed">
-          Demo: owner@rental.dev / rental1234
-          <br />
-          <span className="text-slate-700">Caretakers & tenants sign in via WhatsApp.</span>
-        </p>
+        <button type="submit" disabled={loading} className="relative flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 font-semibold text-slate-950 shadow-lg shadow-emerald-500/15 transition hover:from-emerald-400 hover:to-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 disabled:cursor-not-allowed disabled:opacity-60">
+          {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Signing in…</> : "Sign in"}
+        </button>
+        <div className="relative space-y-3 text-center">
+          <p className="text-sm text-slate-500">New to Rental OS? <a href="/register" className="font-medium text-emerald-300 underline-offset-4 hover:text-emerald-200 hover:underline">Create an owner account</a></p>
+          <a href="/" className="inline-block text-xs text-slate-600 underline-offset-4 hover:text-slate-300 hover:underline">Back to home</a>
+          <p className="text-xs leading-5 text-slate-600">Caretaker and staff access is managed separately by the workspace owner.</p>
+        </div>
       </motion.form>
     </div>
   );
