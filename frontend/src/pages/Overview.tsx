@@ -153,15 +153,19 @@ export default function Overview() {
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-4">
 
-      <motion.div variants={item} className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-white">Dashboard</h1>
-          <p className="text-xs text-slate-500 mt-0.5">
+      <motion.div variants={item} className="flex flex-col gap-4 rounded-2xl border border-white/[0.06] bg-gradient-to-r from-slate-900 via-slate-900 to-emerald-950/30 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+        <div className="min-w-0">
+          <div className="mb-1.5 flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.55)]" />
+            <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-300">Property overview</span>
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">Dashboard</h1>
+          <p className="mt-1 text-xs text-slate-400">
             {new Date().toLocaleDateString("en-KE", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
           </p>
         </div>
         {alerts.length > 0 && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {alerts.map((a, i) => (
               <motion.div
                 key={i}
@@ -180,30 +184,33 @@ export default function Overview() {
       </motion.div>
 
       <motion.div variants={item}>
-        <Card className="p-5" hover={false}>
-          <div className="flex items-center gap-2 mb-4">
+        <Card className="overflow-hidden border border-white/[0.07] bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/20 p-4 sm:p-5" hover={false}>
+          <div className="mb-4 flex flex-wrap items-center gap-2">
             <DollarSign className="w-4 h-4 text-emerald-400" />
             <h2 className="text-sm font-semibold text-white">Cash Flow</h2>
             <span className="text-[10px] text-slate-600">This month</span>
-            <div className="ml-auto flex items-center gap-1.5 text-[11px] text-slate-500">
+            <div className="ml-auto flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/[0.07] px-2.5 py-1 text-[11px] text-slate-400">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-glow-pulse" />
               Collection rate <span className="text-emerald-400 font-semibold"><AnimatedNumber value={collectionRate} />%</span>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-6">
-            <div>
-              <div className="text-[11px] text-slate-500 mb-1">Expected</div>
-              <div className="text-2xl font-bold text-white">KES <AnimatedNumber value={money(t.expected)} /></div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="min-w-0 rounded-xl border border-white/[0.05] bg-slate-800/35 p-3 sm:p-4">
+              <div className="mb-2 flex items-center gap-2 text-[11px] text-slate-400"><span className="h-2 w-2 rounded-full bg-slate-400" />Expected</div>
+              <div className="break-words text-xl font-bold tracking-tight text-white sm:text-2xl">KES <AnimatedNumber value={money(t.expected)} /></div>
+              <div className="mt-1 text-[10px] text-slate-600">Rent due this month</div>
             </div>
-            <div>
-              <div className="text-[11px] text-slate-500 mb-1">Collected</div>
-              <div className="text-2xl font-bold text-emerald-400">KES <AnimatedNumber value={money(t.collected)} /></div>
+            <div className="min-w-0 rounded-xl border border-emerald-500/15 bg-emerald-500/[0.06] p-3 sm:p-4">
+              <div className="mb-2 flex items-center gap-2 text-[11px] text-emerald-300"><span className="h-2 w-2 rounded-full bg-emerald-400" />Collected</div>
+              <div className="break-words text-xl font-bold tracking-tight text-emerald-300 sm:text-2xl">KES <AnimatedNumber value={money(t.collected)} /></div>
+              <div className="mt-1 text-[10px] text-slate-500">Payments received</div>
             </div>
-            <div>
-              <div className="text-[11px] text-slate-500 mb-1">Outstanding</div>
-              <div className={`text-2xl font-bold ${t.outstanding > 0 ? "text-rose-400" : "text-white"}`}>
+            <div className="min-w-0 rounded-xl border border-rose-500/15 bg-rose-500/[0.05] p-3 sm:p-4">
+              <div className="mb-2 flex items-center gap-2 text-[11px] text-rose-300"><span className="h-2 w-2 rounded-full bg-rose-400" />Outstanding</div>
+              <div className={`break-words text-xl font-bold tracking-tight sm:text-2xl ${t.outstanding > 0 ? "text-rose-300" : "text-white"}`}>
                 KES <AnimatedNumber value={money(t.outstanding)} />
               </div>
+              <div className="mt-1 text-[10px] text-slate-500">Still to be collected</div>
             </div>
           </div>
           <div className="mt-3 h-1.5 rounded-full bg-slate-800 overflow-hidden">
@@ -217,11 +224,11 @@ export default function Overview() {
         </Card>
       </motion.div>
 
-      <div className="grid md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
 
-        <motion.div variants={item} className="md:col-span-3 space-y-4">
+        <motion.div variants={item} className="min-w-0 space-y-4 xl:col-span-3">
 
-          <Card className="overflow-hidden" hover={false}>
+          <Card className="overflow-hidden border border-white/[0.06] bg-slate-900/70" hover={false}>
             <div className="flex items-center gap-1 px-3 pt-3 pb-2 overflow-x-auto scrollbar-thin">
               {board.hostels.map((h: any) => (
                 <button key={h.property_id} onClick={() => setSelectedProp(h.property_id)}
@@ -283,8 +290,8 @@ export default function Overview() {
             )}
           </Card>
 
-          <Card className="p-4" hover={false}>
-            <div className="flex items-center justify-between mb-3">
+          <Card className="border border-white/[0.06] bg-slate-900/70 p-4 sm:p-5" hover={false}>
+            <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Bell className="w-4 h-4 text-emerald-400" />
                 <h2 className="text-sm font-semibold text-white">Recent Activity</h2>
@@ -353,7 +360,7 @@ export default function Overview() {
           </Card>
         </motion.div>
 
-        <motion.div variants={item} className="md:col-span-2 space-y-4">
+        <motion.div variants={item} className="min-w-0 space-y-4 xl:col-span-2">
 
           {alerts.length > 0 && (
             <Card className="p-4" hover={false}>
