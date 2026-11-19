@@ -157,6 +157,35 @@ def upgrade() -> None:
             op.create_index(f"ix_journal_entries_{column}", "journal_entries", [column])
         _record("table", "journal_entries")
 
+    # A business may have at most one live subscription. Fail with a clear
+    # remediation message instead of silently choosing which plan wins.
+    subscription_indexes = {
+        index["name"] for index in _inspector().get_indexes("business_subscriptions")
+    }
+    live_duplicates = bind.execute(sa.text("""
+        SELECT business_id
+        FROM business_subscriptions
+        WHERE status IN ('active', 'trialing', 'past_due')
+        GROUP BY business_id
+        HAVING COUNT(*) > 1
+        LIMIT 1
+    """)).first()
+    if live_duplicates:
+        raise RuntimeError(
+            "Cannot enforce one live subscription per business: duplicate live "
+            "subscriptions exist. Resolve them before applying this migration."
+        )
+    live_index = "uq_business_subscriptions_one_live_per_business"
+    if live_index not in subscription_indexes:
+        op.create_index(
+            live_index,
+            "business_subscriptions",
+            ["business_id"],
+            unique=True,
+            postgresql_where=sa.text("status IN ('active', 'trialing', 'past_due')"),
+        )
+        _record("index", live_index)
+
     # Existing installations may have these columns from an out-of-band
     # bootstrap. Add only what is missing and remember exactly what we add.
     business_columns = {c["name"] for c in _inspector().get_columns("businesses")}
@@ -191,6 +220,8 @@ def downgrade() -> None:
         if kind == "column":
             table, column = name.split(".", 1)
             op.drop_column(table, column)
+        elif kind == "index":
+            op.drop_index(name, table_name="business_subscriptions")
 
     # Drop in dependency order; only objects created by this migration are
     # removed. Tables present before the migration are never dropped.
