@@ -344,6 +344,8 @@ async def create_price_version(item_id: UUID, data: PriceVersionCreate, session:
         raise HTTPException(status_code=422, detail="Base packages must have a recurring billing interval")
     if (item.pricing_model == "one_time") != (data.billing_interval == "one_time"):
         raise HTTPException(status_code=422, detail="One-time pricing must use the one_time billing interval")
+    if item.pricing_model != "per_billable_unit" and (data.included_units != 0 or data.per_unit_amount != 0):
+        raise HTTPException(status_code=422, detail="Included and per-unit amounts apply only to per_billable_unit pricing")
     if data.effective_from.tzinfo is None:
         raise HTTPException(status_code=422, detail="effective_from must include a timezone")
     if data.effective_to is not None:
