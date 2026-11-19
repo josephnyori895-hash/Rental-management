@@ -215,8 +215,8 @@ async def quote_subscription(
 async def select_subscription(
     data: SelectionRequest,
     session: SessionDep,
+    owner: OwnerDep,
     business: Business = Depends(get_current_business),
-    owner: OwnerDep = None,
 ):
     now, units, currency, total, lines, interval = await _price_selection(session, data, business)
     # Serialize selections per business and prevent multiple live subscriptions.
@@ -285,8 +285,8 @@ async def select_subscription(
 async def cancel_subscription(
     subscription_id: UUID,
     session: SessionDep,
+    owner: OwnerDep,
     business: Business = Depends(get_current_business),
-    owner: OwnerDep = None,
 ):
     """Cancel a draft immediately or schedule an active plan to end at period close."""
     sub = await session.scalar(
@@ -482,8 +482,8 @@ async def create_price_version(item_id: UUID, data: PriceVersionCreate, session:
 async def issue_subscription_invoice(
     subscription_id: UUID,
     session: SessionDep,
+    owner: OwnerDep,
     business: Business = Depends(get_current_business),
-    owner: OwnerDep = None,
 ):
     """Issue a Rental OS subscription invoice for a saved draft selection.
 
