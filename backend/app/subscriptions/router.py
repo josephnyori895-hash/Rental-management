@@ -13,7 +13,8 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import case, desc, select, text
+from sqlalchemy import case, desc, select, text, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import OwnerDep, SessionDep, get_current_business, get_current_user
@@ -385,7 +386,11 @@ async def create_catalogue_item(data: CatalogItemCreate, session: SessionDep, ad
         raise HTTPException(status_code=409, detail="Catalogue code already exists")
     item = SubscriptionCatalogItem(**data.model_dump(), active=True)
     session.add(item)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="Catalogue code already exists")
     record_platform_admin_event(session, admin, "catalogue.item.created", target_type="subscription_catalog_item", target_id=str(item.id), metadata={"code": item.code, "item_type": item.item_type}, request=request)
     return {"id": str(item.id), "code": item.code, "active": item.active}
 
@@ -426,7 +431,9 @@ async def update_catalogue_item(
 @router.post("/admin/catalogue/{item_id}/prices", status_code=201)
 async def create_price_version(item_id: UUID, data: PriceVersionCreate, session: SessionDep, admin: PlatformAdminDep, request: Request):
     item = await session.scalar(
-        select(SubscriptionCatalogItem).where(SubscriptionCatalogItem.id == item_id)
+        select(SubscriptionCatalogItem)
+        .where(SubscriptionCatalogItem.id == item_id)
+        .with_for_update()
     )
     if not item or not item.active:
         raise HTTPException(status_code=404, detail="Active catalogue item not found")
