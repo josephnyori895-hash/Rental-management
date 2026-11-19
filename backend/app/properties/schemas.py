@@ -136,3 +136,8 @@ class PropertyLayoutConfig(BaseModel):
 
 class PropertyLayoutUpdate(BaseModel):
     layout_config: PropertyLayoutConfig
+
+
+class PropertyLayoutOut(BaseModel):
+    property_id: UUID
+    layout_config: PropertyLayoutConfig | None = None

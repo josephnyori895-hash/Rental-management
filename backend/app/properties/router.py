@@ -20,6 +20,7 @@ from app.models.property import Property, Unit
 from app.models.tenant import Tenant
 from app.properties.schemas import (
     PropertyCreate,
+    PropertyLayoutOut,
     PropertyLayoutUpdate,
     PropertyOut,
     UnitCreate,
@@ -52,15 +53,13 @@ async def create_property(
 
 @router.post("/{property_id}/units", response_model=UnitOut)
 async def create_unit(
-    property_id: str,
+    property_id: UUID,
     data: UnitCreate,
     user: User = Depends(get_current_user),
     session: SessionDep = None,
 ):
     """Add a rentable unit to an existing property."""
-    prop = await session.get(Property, property_id)
-    if prop is None or prop.business_id != user.business_id or prop.is_deleted:
-        raise HTTPException(status_code=404, detail="Property not found")
+    prop = await owned_property(property_id, user, session)
 
     unit = Unit(
         business_id=user.business_id,
@@ -82,6 +81,25 @@ class CaretakerAssignRequest(BaseModel):
     user_id: UUID | None = None
 
 
+async def owned_property(property_id: UUID, user: User, session) -> Property:
+    """Resolve a property inside the caller's business, or 404.
+
+    Tenant isolation lives here rather than in each handler: a property outside
+    the caller's business is reported as missing, so ids from another operator
+    cannot be probed for existence.
+    """
+    prop = await session.scalar(
+        select(Property).where(
+            Property.id == property_id,
+            Property.business_id == user.business_id,
+            Property.is_deleted.is_(False),
+        )
+    )
+    if prop is None:
+        raise HTTPException(status_code=404, detail="Property not found")
+    return prop
+
+
 @router.get("", response_model=list[PropertyOut])
 async def list_properties(
     user: User = Depends(get_current_user),
@@ -101,7 +119,7 @@ async def list_properties(
 
 @router.get("/{property_id}/rooms", response_model=list[UnitRoomOut])
 async def list_rooms(
-    property_id: str,
+    property_id: UUID,
     user: User = Depends(get_current_user),
     session: SessionDep = None,
 ):
@@ -110,10 +128,13 @@ async def list_rooms(
     UI can render a lit-window floor plan (red=unpaid, amber=partial,
     green=paid, blue=overpaid, slate=vacant).
     """
+    await owned_property(property_id, user, session)
     units = (
         await session.scalars(
             select(Unit).where(
-                Unit.property_id == property_id, Unit.is_deleted.is_(False)
+                Unit.property_id == property_id,
+                Unit.business_id == user.business_id,
+                Unit.is_deleted.is_(False),
             )
         )
     ).all()
@@ -197,15 +218,18 @@ async def list_rooms(
 
 @router.get("/{property_id}/units", response_model=list[UnitOut])
 async def list_units(
-    property_id: str,
+    property_id: UUID,
     user: User = Depends(get_current_user),
     session: SessionDep = None,
 ):
     """List rooms within a hostel."""
+    await owned_property(property_id, user, session)
     rows = (
         await session.scalars(
             select(Unit).where(
-                Unit.property_id == property_id, Unit.is_deleted.is_(False)
+                Unit.property_id == property_id,
+                Unit.business_id == user.business_id,
+                Unit.is_deleted.is_(False),
             )
         )
     ).all()
@@ -214,7 +238,7 @@ async def list_units(
 
 @router.patch("/{property_id}/caretaker")
 async def assign_caretaker(
-    property_id: str,
+    property_id: UUID,
     data: CaretakerAssignRequest,
     session: SessionDep,
     user: User = Depends(require_roles("owner", "manager")),
@@ -225,9 +249,7 @@ async def assign_caretaker(
     ticket and renewal alerts reach the right person. Passing `user_id: null`
     unassigns, which routes that property's alerts back to the owner.
     """
-    prop = await session.get(Property, property_id)
-    if not prop or prop.business_id != user.business_id or prop.is_deleted:
-        raise HTTPException(status_code=404, detail="Property not found")
+    prop = await owned_property(property_id, user, session)
 
     if data.user_id is None:
         prop.manager_id = None
@@ -249,26 +271,18 @@ async def assign_caretaker(
     }
 
 
-@router.get("/{property_id}/layout")
+@router.get("/{property_id}/layout", response_model=PropertyLayoutOut)
 async def get_property_layout(
     property_id: UUID,
     user: User = Depends(get_current_user),
     session: SessionDep = None,
 ):
     """Return saved visual layout metadata without changing rental records."""
-    prop = await session.scalar(
-        select(Property).where(
-            Property.id == property_id,
-            Property.business_id == user.business_id,
-            Property.is_deleted.is_(False),
-        )
-    )
-    if prop is None:
-        raise HTTPException(status_code=404, detail="Property not found")
-    return {"property_id": str(prop.id), "layout_config": prop.layout_config}
+    prop = await owned_property(property_id, user, session)
+    return {"property_id": prop.id, "layout_config": prop.layout_config}
 
 
-@router.put("/{property_id}/layout")
+@router.put("/{property_id}/layout", response_model=PropertyLayoutOut)
 async def save_property_layout(
     property_id: UUID,
     payload: PropertyLayoutUpdate,
@@ -276,15 +290,7 @@ async def save_property_layout(
     session: SessionDep = None,
 ):
     """Save validated face/floor/section mappings for units owned by this property."""
-    prop = await session.scalar(
-        select(Property).where(
-            Property.id == property_id,
-            Property.business_id == user.business_id,
-            Property.is_deleted.is_(False),
-        )
-    )
-    if prop is None:
-        raise HTTPException(status_code=404, detail="Property not found")
+    prop = await owned_property(property_id, user, session)
 
     unit_ids = [placement.unit_id for placement in payload.layout_config.placements]
     if unit_ids:

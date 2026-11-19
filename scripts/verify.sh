@@ -26,6 +26,7 @@ check "python import"     bash -c "cd '$ROOT/backend' && '$PY' -c 'import app.ma
 check "settings load"     bash -c "cd '$ROOT/backend' && '$PY' -c 'from app.core.config import settings as s; s.REMINDERS_ENABLED; s.RENT_RUN_ENABLED'"
 check "alembic single head" bash -c "cd '$ROOT/backend' && test \"\$(./venv/bin/alembic heads 2>/dev/null | grep -c 'head')\" = 1"
 check "backend tests"     bash -c "cd '$ROOT/backend' && timeout 600 ./venv/bin/pytest -q"
+check "tenant isolation"  bash -c "cd '$ROOT/backend' && timeout 300 ./venv/bin/pytest tests/test_property_isolation.py -q"
 check "tsc --noEmit"      bash -c "cd '$ROOT/frontend' && npx tsc --noEmit"
 check "vite build"        bash -c "cd '$ROOT/frontend' && npm run build"
 check "sw syntax"         bash -c "cd '$ROOT/frontend' && node --check dist/sw.js"
