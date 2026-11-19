@@ -41,7 +41,7 @@ class CatalogItemCreate(BaseModel):
     item_type: str
     pricing_model: str
     features: dict = Field(default_factory=dict)
-    display_order: int = 0
+    display_order: int = Field(default=0, ge=0)
 
     @field_validator("item_type")
     @classmethod
@@ -62,7 +62,7 @@ class CatalogItemUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=160)
     description: str | None = Field(default=None, max_length=2000)
     features: dict | None = None
-    display_order: int | None = None
+    display_order: int | None = Field(default=None, ge=0)
     active: bool | None = None
 
 
