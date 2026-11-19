@@ -208,6 +208,15 @@ class Settings(BaseSettings):
             if value == "change-me-in-production" or len(value) < 32:
                 problems.append(f"{name} must be set to a unique secret of at least 32 characters")
 
+        for name, value in (
+            ("MPESA_CALLBACK_SECRET", self.MPESA_CALLBACK_SECRET),
+            ("MPESA_C2B_SECRET", self.MPESA_C2B_SECRET),
+        ):
+            if not value or value.startswith("change-") or len(value) < 32:
+                problems.append(
+                    f"{name} must be configured with a unique secret of at least 32 characters"
+                )
+
         if self.ENCRYPTION_KEY == "change-me-in-production":
             problems.append("ENCRYPTION_KEY must be set to a 64-character hex key")
         else:
