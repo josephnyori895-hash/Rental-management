@@ -12,7 +12,23 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PY="$ROOT/backend/venv/bin/python"
+
+# Interpreter: an explicit $PYTHON wins, then the repo virtualenv, then whatever
+# python3 is on PATH. CI installs into the runner's interpreter and has no venv;
+# a developer machine has one. The gate must produce the same verdict on both,
+# so the only thing that varies is which interpreter runs the same commands.
+if [ -n "${PYTHON:-}" ]; then
+  PY="$PYTHON"
+elif [ -x "$ROOT/backend/venv/bin/python" ]; then
+  PY="$ROOT/backend/venv/bin/python"
+else
+  PY="$(command -v python3 || true)"
+fi
+if [ -z "${PY:-}" ] || [ ! -x "$PY" ]; then
+  echo "verify: no usable Python interpreter; set PYTHON=/path/to/python" >&2
+  exit 2
+fi
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 FAILED=0
@@ -71,12 +87,17 @@ step "python import"  "$WORK/import.log"  \
   bash -c "cd '$ROOT/backend' && '$PY' -c 'import app.main'"
 step "settings load"  "$WORK/settings.log" \
   bash -c "cd '$ROOT/backend' && '$PY' -c 'from app.core.config import settings as s; s.REMINDERS_ENABLED; s.RENT_RUN_ENABLED'"
-step "alembic single head" "$WORK/alembic.log" \
-  bash -c "cd '$ROOT/backend' && test \"\$(./venv/bin/alembic heads 2>/dev/null | grep -c 'head')\" = 1"
+
+count_single_head() {
+  local heads
+  heads="$(cd "$ROOT/backend" && "$PY" -m alembic heads 2>/dev/null | grep -c '(head)')"
+  [ "$heads" = "1" ]
+}
+step "alembic single head" "$WORK/alembic.log" count_single_head
 
 # ── Backend suite ────────────────────────────────────────────────────
 FULL_XML="$WORK/full.xml"
-if (cd "$ROOT/backend" && timeout 900 ./venv/bin/pytest -q --junitxml="$FULL_XML") >"$WORK/full.log" 2>&1; then
+if (cd "$ROOT/backend" && timeout 900 "$PY" -m pytest -q --junitxml="$FULL_XML") >"$WORK/full.log" 2>&1; then
   FULL_EXIT=0
 else
   FULL_EXIT=$?
@@ -96,7 +117,7 @@ fi
 
 # ── Isolation tests: must run, must not skip ─────────────────────────
 ISO_XML="$WORK/iso.xml"
-if (cd "$ROOT/backend" && timeout 300 ./venv/bin/pytest tests/test_property_isolation.py -q --junitxml="$ISO_XML") >"$WORK/iso.log" 2>&1; then
+if (cd "$ROOT/backend" && timeout 300 "$PY" -m pytest tests/test_property_isolation.py -q --junitxml="$ISO_XML") >"$WORK/iso.log" 2>&1; then
   ISO_EXIT=0
 else
   ISO_EXIT=$?
