@@ -58,7 +58,7 @@ DIALECT = postgresql.dialect()
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 VERSIONS_DIR = BACKEND_DIR / "migrations" / "versions"
 HEAD_REVISION = "e5f6a7b8c9d0"
-LATEST_REVISION = "3d4e5f6a7b8c"  # actual alembic head: subscription invoices + events
+LATEST_REVISION = "4e5f6a7b8c9d"  # actual alembic head: fresh-install schema repair
 
 
 # ── Consumption ────────────────────────────────────────────────────
@@ -561,7 +561,7 @@ def test_migration_history_is_a_single_linear_chain_ending_at_head():
     assert HEAD_REVISION in revisions
     assert revisions[HEAD_REVISION] == "d4e5f6a7b8c9"
     # The head's direct predecessor must be a real revision in the graph.
-    assert revisions[LATEST_REVISION] == "2c3d4e5f6a7b"
+    assert revisions[LATEST_REVISION] == "3d4e5f6a7b8c"
 
     bases = [rev for rev, down in revisions.items() if down is None]
     heads = [rev for rev in revisions if rev not in set(revisions.values())]
