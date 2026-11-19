@@ -101,6 +101,8 @@ def test_production_accepts_explicit_strong_secrets():
         SECRET_KEY="s" * 48,
         JWT_SECRET="j" * 48,
         ENCRYPTION_KEY="ab" * 32,
+        MPESA_CALLBACK_SECRET="c" * 40,
+        MPESA_C2B_SECRET="d" * 40,
     )
     assert settings.effective_jwt_secret == "j" * 48
 

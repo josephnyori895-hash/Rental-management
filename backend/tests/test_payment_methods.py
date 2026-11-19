@@ -508,3 +508,77 @@ async def test_airtel_collect_sends_the_full_balance_not_a_truncated_one(
     payment_request = sent[-1]["json"]
     assert payment_request["transaction"]["amount"] == 15000.75
     assert payment_request["transaction"]["amount"] != 15000
+
+
+
+@requires_db
+async def test_stk_callback_replay_does_not_double_credit(businesses, db_session):
+    """Daraja retries an STK confirmation delivery; the retry must be a no-op."""
+    from app.models.billing import Payment
+    from app.payments.service import mark_paid_by_checkout
+
+    first, _ = businesses
+    checkout_id = "CI-CHECKOUT-REPLAY-0001"
+    first.invoice.mpesa_checkout_request_id = checkout_id
+    await db_session.flush()
+
+    first_result = await mark_paid_by_checkout(
+        db_session, checkout_id, 8000, "RCPT-1", {"CheckoutRequestID": checkout_id, "ReceiptNumber": "RCPT-1"}
+    )
+    await db_session.refresh(first.invoice)
+    assert first_result is not None
+    assert first.invoice.status == "partial"
+    assert first.invoice.balance == 7000
+
+    # Same checkout + same receipt delivered again: partial payment already
+    # applied, replay must not credit a second time.
+    await mark_paid_by_checkout(
+        db_session, checkout_id, 8000, "RCPT-1", {"CheckoutRequestID": checkout_id, "ReceiptNumber": "RCPT-1"}
+    )
+    await db_session.refresh(first.invoice)
+    assert first.invoice.balance == 7000
+    replayed = (
+        await db_session.scalars(
+            select(Payment).where(
+                Payment.business_id == first.business.id,
+                Payment.method == "mpesa",
+                Payment.reference == "RCPT-1",
+            )
+        )
+    ).all()
+    assert len(replayed) == 1
+
+
+
+@requires_db
+async def test_concurrent_partial_payments_on_one_invoice_settle_once(businesses, db_session):
+    """Two settlements against one invoice settle into the balance, never past
+    it: each apply reads the (locked) balance and the running total is bounded
+    by the invoice amount."""
+    from app.models.billing import Invoice, Payment
+    from app.payments.service import apply_payment
+
+    first, _ = businesses
+    invoice_id = first.invoice.id
+    total_before = Decimal(str(first.invoice.balance))
+
+    result_a = await apply_payment(db_session, str(invoice_id), 7000, "mpesa", reference="CP-1")
+    result_b = await apply_payment(db_session, str(invoice_id), 7000, "mpesa", reference="CP-2")
+
+    assert result_a is not None and result_b is not None
+    await db_session.refresh(first.invoice)
+    balance = Decimal(str(first.invoice.balance))
+    assert float(balance) == float(total_before) - 14000
+    assert float(first.invoice.paid_amount) == 14000
+
+    payments = (
+        await db_session.scalars(
+            select(Payment).where(
+                Payment.business_id == first.business.id,
+                Payment.invoice_id == invoice_id,
+                Payment.method == "mpesa",
+                Payment.reference.in_({"CP-1", "CP-2"}),
+            )
+        )
+    ).all()
+    assert len(payments) == 2
