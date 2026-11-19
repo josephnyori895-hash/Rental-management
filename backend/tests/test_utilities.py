@@ -58,6 +58,7 @@ DIALECT = postgresql.dialect()
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 VERSIONS_DIR = BACKEND_DIR / "migrations" / "versions"
 HEAD_REVISION = "e5f6a7b8c9d0"
+LATEST_REVISION = "f6a7b8c9d0e1"
 
 
 # ── Consumption ────────────────────────────────────────────────────
@@ -554,15 +555,16 @@ def test_migration_history_is_a_single_linear_chain_ending_at_head():
 
     assert HEAD_REVISION in revisions
     assert revisions[HEAD_REVISION] == "d4e5f6a7b8c9"
+    assert revisions[LATEST_REVISION] == HEAD_REVISION
 
     bases = [rev for rev, down in revisions.items() if down is None]
     heads = [rev for rev in revisions if rev not in set(revisions.values())]
     assert len(bases) == 1, f"Expected one base revision, found {bases}"
-    assert heads == [HEAD_REVISION], f"Expected a single head, found {heads}"
+    assert heads == [LATEST_REVISION], f"Expected a single head, found {heads}"
 
     # Walk back from head: every step must exist and the chain must terminate.
     seen = []
-    current: str | None = HEAD_REVISION
+    current: str | None = LATEST_REVISION
     while current is not None:
         assert current not in seen, f"Cycle in migration history at {current}"
         seen.append(current)
