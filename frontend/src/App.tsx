@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import Login from "./pages/Login";
+import Welcome from "./pages/Welcome";
 import Overview from "./pages/Overview";
 import Properties from "./pages/Properties";
 import Tenants from "./pages/Tenants";
@@ -21,7 +21,6 @@ import { startNotificationPolling, type PaymentNotification } from "./lib/notifi
 import NotificationToast from "./components/NotificationToast";
 import NotificationDropdown from "./components/NotificationDropdown";
 import TenantDetailModal from "./components/TenantDetailModal";
-import LoginBackground from "./components/LoginBackground";
 
 import {
   LayoutDashboard, Building2, Users, CreditCard, Wrench, Receipt,
@@ -169,15 +168,7 @@ export default function App() {
 
   if (!token) {
     return (
-      <div className="min-h-screen bg-slate-950">
-        <LoginBackground />
-        <Login
-          onLogin={(t) => {
-            setToken(t);
-            setView("overview");
-          }}
-        />
-      </div>
+      <Welcome onLogin={(t) => { setToken(t); setView("overview"); }} />
     );
   }
 
