@@ -30,6 +30,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
     )
+    op.create_index("ix_subscription_catalog_items_created_at", "subscription_catalog_items", ["created_at"])
     op.create_table(
         "subscription_price_versions",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -45,6 +46,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
     )
+    op.create_index("ix_subscription_price_versions_created_at", "subscription_price_versions", ["created_at"])
     op.create_index("ix_subscription_price_versions_catalog_item_id", "subscription_price_versions", ["catalog_item_id"])
     op.create_index("ix_subscription_price_item_effective", "subscription_price_versions", ["catalog_item_id", "effective_from", "effective_to"])
     op.create_table(
@@ -62,6 +64,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
     )
+    op.create_index("ix_business_subscriptions_created_at", "business_subscriptions", ["created_at"])
     op.create_index("ix_business_subscriptions_business_id", "business_subscriptions", ["business_id"])
     op.create_index("ix_business_subscription_status", "business_subscriptions", ["business_id", "status"])
     op.create_table(
@@ -81,6 +84,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("subscription_id", "catalog_item_id", name="uq_subscription_item_catalog"),
     )
+    op.create_index("ix_business_subscription_items_created_at", "business_subscription_items", ["created_at"])
     op.create_index("ix_business_subscription_items_subscription_id", "business_subscription_items", ["subscription_id"])
     op.create_table(
         "subscription_invoices",
@@ -99,6 +103,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("business_id", "invoice_number", name="uq_subscription_invoice_number"),
     )
+    op.create_index("ix_subscription_invoices_created_at", "subscription_invoices", ["created_at"])
     op.create_index("ix_subscription_invoices_business_id", "subscription_invoices", ["business_id"])
     op.create_index("ix_subscription_invoices_subscription_id", "subscription_invoices", ["subscription_id"])
     op.create_table(
@@ -116,6 +121,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("provider", "provider_reference", name="uq_subscription_payment_provider_ref"),
     )
+    op.create_index("ix_subscription_payments_created_at", "subscription_payments", ["created_at"])
     op.create_index("ix_subscription_payments_business_id", "subscription_payments", ["business_id"])
     op.create_index("ix_subscription_payments_invoice_id", "subscription_payments", ["invoice_id"])
 
