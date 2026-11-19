@@ -2,6 +2,10 @@ from app.models.accounting import AccountType, JournalEntry
 from app.models.base import AuditLog, UUIDMixin, TimestampMixin, SoftDeleteMixin
 from app.models.billing import Invoice, Payment, DepositRefund, InvoiceType, InvoiceStatus, PaymentMethod
 from app.models.business import Business, User, UserRole, SubscriptionTier
+from app.models.subscriptions import (
+    SubscriptionCatalogItem, SubscriptionPriceVersion, BusinessSubscription,
+    BusinessSubscriptionItem, SubscriptionInvoice, SubscriptionPayment,
+)
 from app.models.event import EventLog
 from app.models.expense import Expense, ExpenseCategory
 from app.models.lease import Lease, LeaseStatus

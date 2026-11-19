@@ -37,6 +37,9 @@ class UserRole(str, Enum):
     OWNER = "owner"
     MANAGER = "manager"
     AGENT = "agent"  # caretaker / property agent on the ground
+    # Rental OS platform staff. Never issuable through `POST /auth/staff`;
+    # it gates the platform catalogue and price-version endpoints.
+    PLATFORM_ADMIN = "platform_admin"
 
 
 class SubscriptionTier(str, Enum):

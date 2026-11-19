@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class MpesaConfig(BaseModel):
@@ -78,3 +78,17 @@ class StaffCreate(BaseModel):
     phone: str | None = None
     role: str = "agent"
     pin: str | None = Field(None, min_length=4, max_length=8)
+
+    @field_validator("role")
+    @classmethod
+    def staff_role(cls, value: str) -> str:
+        """Only business-level staff roles may be provisioned here.
+
+        `role` used to be a free-form string written straight to the database,
+        so an owner could create a user with `platform_admin` and reach the
+        platform catalogue endpoints. Platform staff are provisioned outside
+        this endpoint on purpose.
+        """
+        if value not in {"manager", "agent"}:
+            raise ValueError("role must be manager or agent")
+        return value

@@ -16,6 +16,7 @@ from app.core.database import Base
 # ── Import ALL models so they register on Base.metadata ──────────
 from app.models.base import *        # AuditLog + mixins
 from app.models.business import *    # Business, User, UserRole, SubscriptionTier
+from app.models.subscriptions import *  # Rental OS platform subscription models
 from app.models.tenant import *      # Tenant
 from app.models.lease import *       # Lease, LeaseStatus
 from app.models.property import *    # Property, Unit, enums
@@ -23,6 +24,10 @@ from app.models.billing import *     # Invoice, Payment, DepositRefund
 from app.models.event import *       # EventLog
 from app.notifications.models import *  # NotificationLog
 from app.documents.models import *  # Document
+# Outside the `app.models` package, so its table (chart_of_accounts) is not
+# registered by the package import above. Without this, autogenerate sees the
+# accounting tables as extraneous and proposes dropping them.
+from app.accounting.models import *  # ChartOfAccount
 
 # Reuse the application's DSN translation, so migrations connect exactly as the
 # app does. A hosted Postgres DSN carries `?sslmode=require`, which SQLAlchemy's

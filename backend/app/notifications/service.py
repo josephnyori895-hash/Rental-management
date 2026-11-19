@@ -139,13 +139,16 @@ async def send_payment_receipt_sms(
 
 
 async def process_due_reminders(session: AsyncSession, business_id: uuid.UUID) -> int:
-    from datetime import date, timedelta
+    from datetime import timedelta
     from datetime import datetime as dt
     from sqlalchemy import func as sa_func
     from app.models.billing import Invoice
     from app.models.property import Unit
 
-    today = date.today()
+    # Anchor the day on UTC: `created_at` is stored in UTC, so a local
+    # `date.today()` puts `today_start` in the future for a few hours after
+    # local midnight and the once-a-day guard stops firing.
+    today = dt.now(timezone.utc).date()
     leases_q = select(Lease).where(Lease.business_id == business_id, Lease.status == "active")
     leases = (await session.scalars(leases_q)).all()
     sent = 0
@@ -166,7 +169,7 @@ async def process_due_reminders(session: AsyncSession, business_id: uuid.UUID) -
         if not invoice:
             continue
 
-        today_start = dt.combine(today, dt.min.time()).replace(tzinfo=timezone.utc)
+        today_start = dt.combine(today, dt.min.time(), tzinfo=timezone.utc)
         already_sent = await session.scalar(
             select(sa_func.count(NotificationLog.id)).where(
                 NotificationLog.tenant_id == tenant.id,
@@ -206,14 +209,14 @@ async def process_caretaker_digests(session: AsyncSession, business_id: uuid.UUI
     property. The once-a-day guard is per recipient, which is why it uses the
     phone number rather than a property id: the same person may run both.
     """
-    from datetime import date
     from datetime import datetime as dt
     from sqlalchemy import func as sa_func
     from app.models.billing import Invoice
     from app.models.property import Property, Unit
 
-    today = date.today()
-    today_start = dt.combine(today, dt.min.time()).replace(tzinfo=timezone.utc)
+    # Same UTC anchor as `process_due_reminders`; see the note there.
+    today = dt.now(timezone.utc).date()
+    today_start = dt.combine(today, dt.min.time(), tzinfo=timezone.utc)
 
     rows = (await session.execute(
         select(Invoice, Property, Unit, Tenant)

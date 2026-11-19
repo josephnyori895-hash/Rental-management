@@ -81,7 +81,10 @@ if (cd "$ROOT/backend" && timeout 900 ./venv/bin/pytest -q --junitxml="$FULL_XML
 else
   FULL_EXIT=$?
 fi
-FULL_SUMMARY="$("$PY" -c "$SUMMARISE" "$FULL_XML" 2>/dev/null || echo "no xml report")"
+# The summariser exits non-zero when it reports failures, so `|| echo` here
+# would print "no xml report" over a real, parsed failure count.
+FULL_SUMMARY="$("$PY" -c "$SUMMARISE" "$FULL_XML" 2>/dev/null)"
+[ -n "$FULL_SUMMARY" ] || FULL_SUMMARY="no xml report"
 FULL_SKIPPED="$(printf '%s' "$FULL_SUMMARY" | grep -Eo '[0-9]+ skipped' | grep -Eo '[0-9]+' || echo 0)"
 if [ "$FULL_EXIT" -ne 0 ]; then
   row "backend tests" "FAIL  [$FULL_SUMMARY]"
@@ -101,7 +104,8 @@ if (cd "$ROOT/backend" && timeout 300 ./venv/bin/pytest tests/test_property_isol
 else
   ISO_EXIT=$?
 fi
-ISO_SUMMARY="$("$PY" -c "$SUMMARISE" "$ISO_XML" 2>/dev/null || echo "no xml report")"
+ISO_SUMMARY="$("$PY" -c "$SUMMARISE" "$ISO_XML" 2>/dev/null)"
+[ -n "$ISO_SUMMARY" ] || ISO_SUMMARY="no xml report"
 ISO_TESTS="$(printf '%s' "$ISO_SUMMARY" | grep -Eo '^[0-9]+ tests' | grep -Eo '^[0-9]+' || echo 0)"
 ISO_SKIPPED="$(printf '%s' "$ISO_SUMMARY" | grep -Eo '[0-9]+ skipped' | grep -Eo '[0-9]+' || echo 0)"
 
