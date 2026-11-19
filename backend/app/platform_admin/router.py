@@ -33,7 +33,8 @@ async def platform_admin_login(data: PlatformAdminLogin, session: PlatformAdminS
         select(PlatformAdmin).where(PlatformAdmin.email == data.email.lower())
     )
     # Same response for unknown, inactive and incorrect-password accounts.
-    if not admin or not admin.is_active or not verify_password(data.password, admin.password_hash):
+    if (not admin or not admin.is_active or len(data.password.encode("utf-8")) > 72
+            or not verify_password(data.password, admin.password_hash)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     record_platform_admin_event(session, admin, "auth.login.succeeded", request=request)
     token = create_access_token(
