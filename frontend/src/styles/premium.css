@@ -1,0 +1,158 @@
+/* Rental OS premium design foundation — v1 */
+:root {
+  color-scheme: light;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+.rental-app-shell {
+  --ro-ink: #17251f;
+  --ro-muted: #718078;
+  --ro-line: #e4eae5;
+  --ro-canvas: #f4f7f4;
+  --ro-surface: #ffffff;
+  --ro-surface-soft: #f8faf8;
+  --ro-accent: #187a55;
+  --ro-accent-soft: #e7f4ed;
+  min-height: 100vh;
+  color: var(--ro-ink);
+  background:
+    radial-gradient(ellipse at 82% 0%, rgba(190, 224, 203, .25), transparent 34rem),
+    var(--ro-canvas);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: -0.012em;
+}
+.rental-app-shell .premium-sidebar {
+  background: rgba(255,255,255,.94) !important;
+  border-right: 1px solid var(--ro-line) !important;
+  box-shadow: 8px 0 32px rgba(25, 50, 37, .035);
+  color: var(--ro-ink);
+  backdrop-filter: blur(24px);
+}
+.rental-app-shell .premium-sidebar-header {
+  border-bottom: 1px solid var(--ro-line) !important;
+}
+.rental-app-shell .premium-main {
+  min-height: 100vh;
+  background: transparent;
+}
+.rental-app-shell .premium-content {
+  width: min(100%, 1600px);
+  margin-inline: auto;
+  padding: clamp(1rem, 2.2vw, 2.25rem);
+}
+.rental-app-shell .bg-slate-950 { background-color: var(--ro-canvas) !important; }
+.rental-app-shell .bg-slate-900\/80,
+.rental-app-shell .bg-slate-900\/60 { background-color: rgba(255,255,255,.92) !important; }
+.rental-app-shell .bg-slate-900\/40,
+.rental-app-shell .bg-slate-800\/70,
+.rental-app-shell .bg-slate-800\/60,
+.rental-app-shell .bg-slate-800\/40 { background-color: #f5f8f5 !important; }
+.rental-app-shell .bg-slate-800 { background-color: #eef3ef !important; }
+.rental-app-shell .text-white { color: var(--ro-ink) !important; }
+.rental-app-shell .text-slate-100,
+.rental-app-shell .text-slate-200 { color: #26382f !important; }
+.rental-app-shell .text-slate-300 { color: #506158 !important; }
+.rental-app-shell .text-slate-400 { color: #697a70 !important; }
+.rental-app-shell .text-slate-500 { color: #829087 !important; }
+.rental-app-shell .text-slate-600,
+.rental-app-shell .text-slate-700 { color: #9aa69e !important; }
+.rental-app-shell [class~="border-white/[0.06]"],
+.rental-app-shell [class~="border-white/[0.04]"],
+.rental-app-shell .border-slate-800,
+.rental-app-shell .border-slate-700 { border-color: var(--ro-line) !important; }
+.rental-app-shell .backdrop-blur-xl,
+.rental-app-shell .backdrop-blur-2xl { backdrop-filter: blur(18px); }
+.rental-app-shell .rounded-2xl.bg-slate-900\/60,
+.rental-app-shell .rounded-2xl.bg-slate-900\/40 {
+  border: 1px solid var(--ro-line);
+  box-shadow: 0 8px 28px rgba(29, 56, 39, .045), 0 1px 2px rgba(29, 56, 39, .035);
+}
+.rental-app-shell button,
+.rental-app-shell a { -webkit-tap-highlight-color: transparent; }
+.rental-app-shell button:focus-visible,
+.rental-app-shell a:focus-visible,
+.rental-app-shell input:focus-visible,
+.rental-app-shell select:focus-visible,
+.rental-app-shell textarea:focus-visible {
+  outline: 3px solid rgba(24,122,85,.22);
+  outline-offset: 2px;
+}
+.rental-app-shell input,
+.rental-app-shell select,
+.rental-app-shell textarea {
+  border-color: #dce5de;
+}
+.rental-app-shell .premium-nav-item {
+  color: #63746a !important;
+  border-radius: 12px;
+  min-height: 42px;
+  transition: color .2s ease, background .2s ease, transform .2s ease;
+}
+.rental-app-shell .premium-nav-item:hover {
+  color: #1d4934 !important;
+  background: #f1f6f2 !important;
+}
+.rental-app-shell .premium-nav-item[data-active="true"] {
+  color: #176b49 !important;
+  background: #eaf4ed !important;
+}
+.rental-app-shell .premium-nav-item[data-active="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: #21845c;
+}
+.rental-app-shell .premium-brand-mark {
+  background: linear-gradient(145deg, #1f8b60, #14563d) !important;
+  box-shadow: 0 7px 16px rgba(24,122,85,.18) !important;
+}
+.rental-app-shell .premium-card {
+  background: rgba(255,255,255,.94);
+  border: 1px solid var(--ro-line);
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(29,56,39,.045), 0 1px 2px rgba(29,56,39,.035);
+}
+.rental-app-shell .premium-eyebrow {
+  color: #718278;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.rental-app-shell .premium-heading {
+  color: #18271f;
+  font-weight: 750;
+  letter-spacing: -.04em;
+}
+.rental-app-shell .premium-muted { color: #7c8b82; }
+.rental-app-shell .premium-divider { border-color: var(--ro-line); }
+.rental-app-shell .premium-main .text-2xl,
+.rental-app-shell .premium-main .text-xl { letter-spacing: -.04em; }
+@keyframes ro-rise-in {
+  from { opacity: 0; transform: translate3d(0, 14px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes ro-soft-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(24,122,85,.12); }
+  50% { box-shadow: 0 0 0 7px rgba(24,122,85,0); }
+}
+.ro-rise-in { animation: ro-rise-in .55s cubic-bezier(.2,.8,.2,1) both; }
+.ro-live-pulse { animation: ro-soft-pulse 2.4s ease-out infinite; }
+@media (max-width: 767px) {
+  .rental-app-shell .premium-content { padding: 1rem .875rem 5rem; }
+  .rental-app-shell .premium-sidebar { max-width: min(86vw, 292px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rental-app-shell *, .rental-app-shell *::before, .rental-app-shell *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
+}
