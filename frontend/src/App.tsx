@@ -21,7 +21,6 @@ import { startNotificationPolling, type PaymentNotification } from "./lib/notifi
 import NotificationToast from "./components/NotificationToast";
 import NotificationDropdown from "./components/NotificationDropdown";
 import TenantDetailModal from "./components/TenantDetailModal";
-import Background from "./components/Background";
 import LoginBackground from "./components/LoginBackground";
 
 import {
@@ -190,8 +189,6 @@ export default function App() {
 
   return (
     <div className="rental-app-shell min-h-screen flex">
-      <Background />
-
       <AnimatePresence>
         {sidebarOpen && (
           <motion.aside
