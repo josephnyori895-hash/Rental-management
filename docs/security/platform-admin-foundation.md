@@ -21,7 +21,7 @@ cd backend
 PLATFORM_ADMIN_EMAIL=admin@example.invalid \
 PLATFORM_ADMIN_NAME="Rental OS Administrator" \
 PLATFORM_ADMIN_PASSWORD='use-a-unique-password-of-at-least-14-characters' \
-python scripts/create_platform_admin.py
+PYTHONPATH=. python scripts/create_platform_admin.py
 ```
 
 The script refuses to overwrite an existing account. Supply the password
