@@ -5,8 +5,6 @@ provisioned by a trusted operator through the deployment's controlled process.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
