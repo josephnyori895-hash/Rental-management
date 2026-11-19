@@ -55,14 +55,23 @@ def _configured() -> bool:
     return bool(settings.FLUTTERWAVE_SECRET_KEY)
 
 
-async def create_checkout(session: AsyncSession, invoice_id: str) -> dict:
-    """Create a hosted checkout and return its URL."""
+async def create_checkout(
+    session: AsyncSession, invoice_id: str, business_id=None
+) -> dict:
+    """Create a hosted checkout for an invoice owned by this business."""
     if not _configured():
         raise RuntimeError(
             "Card/bank checkout is not configured. Set FLUTTERWAVE_SECRET_KEY."
         )
 
-    inv = await session.get(Invoice, UUID(str(invoice_id)))
+    try:
+        parsed_invoice_id = UUID(str(invoice_id))
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise ValueError("Invoice not found") from exc
+    invoice_query = select(Invoice).where(Invoice.id == parsed_invoice_id)
+    if business_id is not None:
+        invoice_query = invoice_query.where(Invoice.business_id == business_id)
+    inv = await session.scalar(invoice_query)
     if inv is None:
         raise ValueError("Invoice not found")
     if inv.balance <= 0:
