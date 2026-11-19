@@ -7,10 +7,12 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 
+from app.core.config import settings
+from app.core.ratelimit import login_limiter
 from app.core.security import create_access_token, verify_password
 from app.models.platform_admin import PlatformAdmin
 from app.platform_admin.dependencies import PlatformAdminDep, PlatformAdminSession
@@ -23,7 +25,7 @@ class PlatformAdminLogin(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
 
-@router.post("/auth/login")
+@router.post("/auth/login", dependencies=[Depends(login_limiter)])
 async def platform_admin_login(data: PlatformAdminLogin, session: PlatformAdminSession):
     admin = await session.scalar(
         select(PlatformAdmin).where(PlatformAdmin.email == data.email.lower())
@@ -38,7 +40,7 @@ async def platform_admin_login(data: PlatformAdminLogin, session: PlatformAdminS
     return {
         "access_token": token,
         "token_type": "bearer",
-        "expires_in": 60 * 60,
+        "expires_in": int(settings.access_token_expiry.total_seconds()),
         "admin": {"id": str(admin.id), "email": admin.email, "full_name": admin.full_name,
                   "is_superadmin": admin.is_superadmin},
     }
