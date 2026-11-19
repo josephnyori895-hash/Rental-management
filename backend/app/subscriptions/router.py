@@ -324,6 +324,7 @@ async def cancel_subscription(
         if sub.current_period_end is None or sub.current_period_end <= now:
             sub.status = "cancelled"
             sub.cancelled_at = now
+            sub.cancellation_requested_at = now
             sub.cancel_at_period_end = False
             event_type = "subscription.cancelled"
             event_metadata = {"reason": "owner_cancelled_after_period_end"}
