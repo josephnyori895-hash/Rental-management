@@ -13,7 +13,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select, text
+from sqlalchemy import desc, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import OwnerDep, SessionDep, get_current_business, get_current_user
@@ -484,3 +484,30 @@ async def get_subscription_invoice(
             "features": line.features_snapshot or {},
         } for line in lines],
     }
+
+
+@router.get("/{subscription_id}/events")
+async def subscription_events(
+    subscription_id: UUID,
+    session: SessionDep,
+    business: Business = Depends(get_current_business),
+    limit: int = 50,
+):
+    limit = max(1, min(limit, 100))
+    sub = await session.scalar(select(BusinessSubscription.id).where(
+        BusinessSubscription.id == subscription_id,
+        BusinessSubscription.business_id == business.id,
+    ))
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    events = (await session.scalars(
+        select(BusinessSubscriptionEvent)
+        .where(BusinessSubscriptionEvent.subscription_id == subscription_id)
+        .order_by(desc(BusinessSubscriptionEvent.created_at))
+        .limit(limit)
+    )).all()
+    return {"events": [{
+        "event_type": event.event_type,
+        "metadata": event.event_metadata or {},
+        "created_at": event.created_at.isoformat(),
+    } for event in events]}
