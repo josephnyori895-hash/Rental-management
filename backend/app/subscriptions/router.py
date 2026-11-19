@@ -11,7 +11,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,12 +19,47 @@ from app.api.deps import SessionDep, get_current_business, get_current_user, req
 from app.models.business import Business
 from app.models.subscriptions import (
     BusinessSubscription, BusinessSubscriptionItem, SubscriptionCatalogItem,
+    SubscriptionPriceVersion,
 )
 from app.subscriptions.service import (
     billable_unit_count, calculate_item_total, current_price, get_entitlements,
 )
 
 router = APIRouter(prefix="/subscriptions", tags=["platform subscriptions"])
+
+
+
+class CatalogItemCreate(BaseModel):
+    code: str = Field(min_length=2, max_length=80, pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    name: str = Field(min_length=2, max_length=160)
+    description: str | None = Field(default=None, max_length=2000)
+    item_type: str
+    pricing_model: str
+    features: dict = Field(default_factory=dict)
+    display_order: int = 0
+
+    @field_validator("item_type")
+    @classmethod
+    def valid_item_type(cls, value: str) -> str:
+        if value not in {"package", "addon"}:
+            raise ValueError("item_type must be package or addon")
+        return value
+
+    @field_validator("pricing_model")
+    @classmethod
+    def valid_pricing_model(cls, value: str) -> str:
+        if value not in {"flat_recurring", "per_billable_unit", "one_time"}:
+            raise ValueError("Unsupported pricing model")
+        return value
+
+
+class PriceVersionCreate(BaseModel):
+    currency: str = Field(default="KES", min_length=3, max_length=3, pattern=r"^[A-Z]{3}$")
+    amount: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+    included_units: int = Field(default=0, ge=0)
+    per_unit_amount: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=12, decimal_places=2)
+    effective_from: datetime
+    effective_to: datetime | None = None
 
 
 class SelectionRequest(BaseModel):
@@ -180,3 +215,51 @@ async def check_entitlement(
 @router.get("/admin/catalogue", dependencies=[Depends(require_roles("platform_admin"))])
 async def admin_catalogue(session: SessionDep):
     return {"items": await _catalogue(session, datetime.now(timezone.utc))}
+
+
+@router.post("/admin/catalogue", status_code=201, dependencies=[Depends(require_roles("platform_admin"))])
+async def create_catalogue_item(data: CatalogItemCreate, session: SessionDep):
+    existing = await session.scalar(
+        select(SubscriptionCatalogItem).where(SubscriptionCatalogItem.code == data.code)
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="Catalogue code already exists")
+    item = SubscriptionCatalogItem(**data.model_dump(), active=True)
+    session.add(item)
+    await session.flush()
+    return {"id": str(item.id), "code": item.code, "active": item.active}
+
+
+@router.post("/admin/catalogue/{item_id}/prices", status_code=201,
+             dependencies=[Depends(require_roles("platform_admin"))])
+async def create_price_version(item_id: UUID, data: PriceVersionCreate, session: SessionDep):
+    item = await session.scalar(
+        select(SubscriptionCatalogItem).where(SubscriptionCatalogItem.id == item_id)
+    )
+    if not item or not item.active:
+        raise HTTPException(status_code=404, detail="Active catalogue item not found")
+    if data.effective_from.tzinfo is None:
+        raise HTTPException(status_code=422, detail="effective_from must include a timezone")
+    if data.effective_to is not None:
+        if data.effective_to.tzinfo is None or data.effective_to <= data.effective_from:
+            raise HTTPException(status_code=422, detail="effective_to must be later and timezone-aware")
+    previous = (await session.execute(
+        select(SubscriptionPriceVersion)
+        .where(SubscriptionPriceVersion.catalog_item_id == item.id,
+               SubscriptionPriceVersion.active.is_(True))
+        .order_by(SubscriptionPriceVersion.effective_from.desc())
+        .with_for_update()
+    )).scalars().all()
+    if previous and data.effective_from <= previous[0].effective_from:
+        raise HTTPException(status_code=409, detail="New price must start after the latest price version")
+    if previous and previous[0].effective_to is None:
+        previous[0].effective_to = data.effective_from
+    price = SubscriptionPriceVersion(catalog_item_id=item.id, **data.model_dump(), active=True)
+    session.add(price)
+    await session.flush()
+    return {"id": str(price.id), "catalog_item_id": str(item.id),
+            "currency": price.currency, "amount": str(price.amount),
+            "effective_from": price.effective_from.isoformat(),
+            "effective_to": price.effective_to.isoformat() if price.effective_to else None}
+
+
