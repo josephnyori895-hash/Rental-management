@@ -252,6 +252,8 @@ async def create_price_version(item_id: UUID, data: PriceVersionCreate, session:
     )).scalars().all()
     if previous and data.effective_from <= previous[0].effective_from:
         raise HTTPException(status_code=409, detail="New price must start after the latest price version")
+    if previous and previous[0].effective_to is not None and data.effective_from < previous[0].effective_to:
+        raise HTTPException(status_code=409, detail="New price overlaps an existing effective period")
     if previous and previous[0].effective_to is None:
         previous[0].effective_to = data.effective_from
     price = SubscriptionPriceVersion(catalog_item_id=item.id, **data.model_dump(), active=True)
