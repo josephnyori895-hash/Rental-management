@@ -179,6 +179,9 @@ async def current_subscription(
             "id": str(sub.id), "status": sub.status, "currency": sub.currency,
             "starts_at": sub.starts_at.isoformat() if sub.starts_at else None,
             "current_period_end": sub.current_period_end.isoformat() if sub.current_period_end else None,
+            "billing_interval": sub.billing_interval,
+            "cancel_at_period_end": sub.cancel_at_period_end,
+            "cancellation_requested_at": sub.cancellation_requested_at.isoformat() if sub.cancellation_requested_at else None,
         },
         "entitlements": await get_entitlements(session, business.id),
     }
@@ -272,6 +275,80 @@ async def select_subscription(
         "subscription_id": str(sub.id), "status": "draft",
         "currency": currency, "billing_interval": interval, "billable_units": units, "total": str(total),
         "notice": "Selection saved as a draft. It is not active and no payment was taken.",
+    }
+
+
+
+
+@router.post("/{subscription_id}/cancel")
+async def cancel_subscription(
+    subscription_id: UUID,
+    session: SessionDep,
+    business: Business = Depends(get_current_business),
+    owner: OwnerDep = None,
+):
+    """Cancel a draft immediately or schedule an active plan to end at period close."""
+    sub = await session.scalar(
+        select(BusinessSubscription)
+        .where(
+            BusinessSubscription.id == subscription_id,
+            BusinessSubscription.business_id == business.id,
+        )
+        .with_for_update()
+    )
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    if sub.status in {"cancelled", "expired"}:
+        return {"subscription_id": str(sub.id), "status": sub.status,
+                "cancel_at_period_end": False, "idempotent": True}
+
+    now = datetime.now(timezone.utc)
+    if sub.status == "draft":
+        open_invoice = await session.scalar(
+            select(SubscriptionInvoice)
+            .where(
+                SubscriptionInvoice.subscription_id == sub.id,
+                SubscriptionInvoice.status.in_(("draft", "open")),
+            )
+            .with_for_update()
+        )
+        if open_invoice:
+            open_invoice.status = "void"
+        sub.status = "cancelled"
+        sub.cancelled_at = now
+        sub.cancellation_requested_at = now
+        sub.cancel_at_period_end = False
+        event_type = "subscription.cancelled"
+        event_metadata = {"reason": "owner_cancelled_before_payment"}
+    elif sub.status in {"active", "trialing", "past_due"}:
+        if sub.current_period_end is None or sub.current_period_end <= now:
+            sub.status = "cancelled"
+            sub.cancelled_at = now
+            sub.cancel_at_period_end = False
+            event_type = "subscription.cancelled"
+            event_metadata = {"reason": "owner_cancelled_after_period_end"}
+        else:
+            sub.cancel_at_period_end = True
+            sub.cancellation_requested_at = now
+            event_type = "subscription.cancellation_scheduled"
+            event_metadata = {"effective_at": sub.current_period_end.isoformat()}
+    else:
+        raise HTTPException(status_code=409, detail="Subscription cannot be cancelled in its current state")
+
+    session.add(BusinessSubscriptionEvent(
+        business_id=business.id,
+        subscription_id=sub.id,
+        event_type=event_type,
+        actor_user_id=owner.id,
+        event_metadata=event_metadata,
+    ))
+    await session.flush()
+    return {
+        "subscription_id": str(sub.id), "status": sub.status,
+        "cancel_at_period_end": sub.cancel_at_period_end,
+        "current_period_end": sub.current_period_end.isoformat() if sub.current_period_end else None,
+        "notice": "Cancellation saved. Access remains until the current paid period ends." if sub.cancel_at_period_end else "Subscription cancelled.",
+        "idempotent": False,
     }
 
 
