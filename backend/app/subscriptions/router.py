@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
@@ -58,6 +59,7 @@ class CatalogItemCreate(BaseModel):
 class PriceVersionCreate(BaseModel):
     currency: str = Field(default="KES", min_length=3, max_length=3, pattern=r"^[A-Z]{3}$")
     amount: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+    billing_interval: Literal["monthly", "quarterly", "annual", "one_time"] = "monthly"
     included_units: int = Field(default=0, ge=0)
     per_unit_amount: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=12, decimal_places=2)
     effective_from: datetime
@@ -84,6 +86,7 @@ async def _catalogue(session: AsyncSession, now: datetime, include_unpriced: boo
             "id": str(item.id), "code": item.code, "name": item.name, "description": item.description,
             "item_type": item.item_type, "pricing_model": item.pricing_model,
             "features": item.features or {}, "currency": price.currency if price else None,
+            "billing_interval": price.billing_interval if price else None,
             "amount": str(price.amount) if price else None,
             "included_units": price.included_units if price else None,
             "per_unit_amount": str(price.per_unit_amount) if price else None,
@@ -114,11 +117,16 @@ async def _price_selection(session: AsyncSession, data: SelectionRequest, busine
 
     units = await billable_unit_count(session, business.id)
     lines, total, currency = [], Decimal("0.00"), None
+    package_interval = None
     for code in codes:
         item = by_code[code]
         price = await current_price(session, item.id, now)
         if not price:
             raise HTTPException(status_code=409, detail=f"No effective price for {code}")
+        if code == data.package_code:
+            package_interval = price.billing_interval
+        elif item.pricing_model != "one_time" and price.billing_interval != package_interval:
+            raise HTTPException(status_code=409, detail="Recurring add-ons must use the base package billing interval")
         if currency is None:
             currency = price.currency
         elif currency != price.currency:
@@ -126,7 +134,7 @@ async def _price_selection(session: AsyncSession, data: SelectionRequest, busine
         amount = calculate_item_total(item, price, 1, units)
         total += amount
         lines.append((item, price, amount))
-    return now, units, currency or "KES", total, lines
+    return now, units, currency or "KES", total, lines, package_interval or "monthly"
 
 
 @router.get("/catalogue")
@@ -164,9 +172,9 @@ async def quote_subscription(
     session: SessionDep,
     business: Business = Depends(get_current_business),
 ):
-    _, units, currency, total, lines = await _price_selection(session, data, business)
+    _, units, currency, total, lines, interval = await _price_selection(session, data, business)
     return {
-        "currency": currency, "billable_units": units, "subtotal": str(total),
+        "currency": currency, "billing_interval": interval, "billable_units": units, "subtotal": str(total),
         "total": str(total),
         "items": [{
             "code": item.code, "name": item.name,
@@ -183,9 +191,9 @@ async def select_subscription(
     session: SessionDep,
     business: Business = Depends(get_current_business),
 ):
-    now, units, currency, total, lines = await _price_selection(session, data, business)
+    now, units, currency, total, lines, interval = await _price_selection(session, data, business)
     sub = BusinessSubscription(
-        business_id=business.id, status="draft", currency=currency,
+        business_id=business.id, status="draft", currency=currency, billing_interval=interval,
     )
     session.add(sub)
     await session.flush()
@@ -193,13 +201,14 @@ async def select_subscription(
         session.add(BusinessSubscriptionItem(
             subscription_id=sub.id, catalog_item_id=item.id, price_version_id=price.id,
             item_code_snapshot=item.code, item_name_snapshot=item.name, quantity=1,
+            billing_interval_snapshot=price.billing_interval,
             unit_amount_snapshot=price.amount, total_amount_snapshot=amount,
             features_snapshot=item.features or {},
         ))
     await session.flush()
     return {
         "subscription_id": str(sub.id), "status": "draft",
-        "currency": currency, "billable_units": units, "total": str(total),
+        "currency": currency, "billing_interval": interval, "billable_units": units, "total": str(total),
         "notice": "Selection saved as a draft. It is not active and no payment was taken.",
     }
 
@@ -241,6 +250,10 @@ async def create_price_version(item_id: UUID, data: PriceVersionCreate, session:
     )
     if not item or not item.active:
         raise HTTPException(status_code=404, detail="Active catalogue item not found")
+    if item.item_type == "package" and data.billing_interval == "one_time":
+        raise HTTPException(status_code=422, detail="Base packages must have a recurring billing interval")
+    if (item.pricing_model == "one_time") != (data.billing_interval == "one_time"):
+        raise HTTPException(status_code=422, detail="One-time pricing must use the one_time billing interval")
     if data.effective_from.tzinfo is None:
         raise HTTPException(status_code=422, detail="effective_from must include a timezone")
     if data.effective_to is not None:
@@ -267,7 +280,7 @@ async def create_price_version(item_id: UUID, data: PriceVersionCreate, session:
     price = SubscriptionPriceVersion(catalog_item_id=item.id, **data.model_dump(), active=True)
     session.add(price)
     await session.flush()
-    record_platform_admin_event(session, admin, "catalogue.price.created", target_type="subscription_catalog_item", target_id=str(item.id), metadata={"price_version_id": str(price.id), "currency": price.currency, "amount": str(price.amount), "effective_from": price.effective_from.isoformat()}, request=request)
+    record_platform_admin_event(session, admin, "catalogue.price.created", target_type="subscription_catalog_item", target_id=str(item.id), metadata={"price_version_id": str(price.id), "currency": price.currency, "billing_interval": price.billing_interval, "amount": str(price.amount), "effective_from": price.effective_from.isoformat()}, request=request)
     return {"id": str(price.id), "catalog_item_id": str(item.id),
             "currency": price.currency, "amount": str(price.amount),
             "effective_from": price.effective_from.isoformat(),
