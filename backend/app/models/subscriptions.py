@@ -24,8 +24,8 @@ from app.models.base import TimestampMixin, UUIDMixin, utcnow
 SUBSCRIPTION_STATUSES = ("draft", "trialing", "active", "past_due", "cancelled", "expired")
 CATALOG_ITEM_TYPES = ("package", "addon")
 PRICING_MODELS = ("flat_recurring", "per_billable_unit", "one_time")
-SUBSCRIPTION_INVOICE_STATUSES = ("draft", "open", "paid", "void", "overdue")
-SUBSCRIPTION_PAYMENT_STATUSES = ("pending", "completed", "failed", "refunded")
+SUBSCRIPTION_INVOICE_STATUSES = ("draft", "open", "paid", "void", "past_due")
+SUBSCRIPTION_PAYMENT_STATUSES = ("pending", "succeeded", "failed", "refunded")
 
 
 def _sql_in(values: tuple[str, ...]) -> str:
@@ -163,7 +163,7 @@ class SubscriptionPayment(Base, UUIDMixin, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("provider", "provider_reference", name="uq_subscription_payment_provider_ref"),
         CheckConstraint(f"status IN ({_sql_in(SUBSCRIPTION_PAYMENT_STATUSES)})", name="status"),
-        CheckConstraint("amount >= 0", name="amount"),
+        CheckConstraint("amount > 0", name="amount_positive"),
         CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
     )
 
