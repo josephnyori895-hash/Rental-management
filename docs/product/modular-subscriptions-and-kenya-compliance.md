@@ -25,6 +25,11 @@ The reviewed `main` baseline already has:
 
 The baseline does **not** yet provide a configurable subscription catalogue, selectable add-ons, a pricing-rule engine, platform subscription invoices/payments, subscription lifecycle management, or server-enforced feature entitlements. The legacy `subscription_tier` field must remain compatible during migration; do not repurpose it as the complete subscription system.
 
+The payment implementation also has material gaps against the agreed owner-controlled model:
+- The `Business` model exposes M-Pesa credential columns as ordinary SQLAlchemy `Text` / `String` fields. The reviewed model path does not apply an encrypted type or encryption/decryption service; the comment saying "encrypted at rest" is not proof of encryption.
+- The current M-Pesa STK service reads process-wide `settings.MPESA_*` credentials and shortcode, rather than resolving the authenticated business's own provider configuration. Business-level credential columns therefore do not, by themselves, establish per-landlord credential isolation.
+- The existing landlord payment service and callbacks must be hardened and verified independently before any tenant-facing live payment activation. Subscription billing must be a separate new domain, not an extension of these tenant payment routes.
+
 ## 3. Product and package model
 
 ### 3.1 Landlord-facing purchase experience
