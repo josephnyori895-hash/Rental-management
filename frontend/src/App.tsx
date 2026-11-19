@@ -261,6 +261,7 @@ export default function App() {
                 return (
                   <motion.button
                     key={n.key}
+                    data-active={isActive}
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.03 }}
