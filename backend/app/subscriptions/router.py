@@ -68,7 +68,7 @@ class SelectionRequest(BaseModel):
     addon_codes: list[str] = Field(default_factory=list, max_length=30)
 
 
-async def _catalogue(session: AsyncSession, now: datetime):
+async def _catalogue(session: AsyncSession, now: datetime, include_unpriced: bool = False):
     items = (await session.execute(
         select(SubscriptionCatalogItem)
         .where(SubscriptionCatalogItem.active.is_(True))
@@ -77,15 +77,16 @@ async def _catalogue(session: AsyncSession, now: datetime):
     output = []
     for item in items:
         price = await current_price(session, item.id, now)
-        if not price:
+        if not price and not include_unpriced:
             continue
         output.append({
-            "code": item.code, "name": item.name, "description": item.description,
+            "id": str(item.id), "code": item.code, "name": item.name, "description": item.description,
             "item_type": item.item_type, "pricing_model": item.pricing_model,
-            "features": item.features or {}, "currency": price.currency,
-            "amount": str(price.amount), "included_units": price.included_units,
-            "per_unit_amount": str(price.per_unit_amount),
-            "effective_from": price.effective_from.isoformat(),
+            "features": item.features or {}, "currency": price.currency if price else None,
+            "amount": str(price.amount) if price else None,
+            "included_units": price.included_units if price else None,
+            "per_unit_amount": str(price.per_unit_amount) if price else None,
+            "effective_from": price.effective_from.isoformat() if price else None,
         })
     return output
 
@@ -222,7 +223,7 @@ async def check_entitlement(
 
 @router.get("/admin/catalogue")
 async def admin_catalogue(session: SessionDep, admin: PlatformAdminDep):
-    return {"items": await _catalogue(session, datetime.now(timezone.utc))}
+    return {"items": await _catalogue(session, datetime.now(timezone.utc), include_unpriced=True)}
 
 
 @router.post("/admin/catalogue", status_code=201)
