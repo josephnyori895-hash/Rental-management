@@ -55,7 +55,7 @@ async def mpesa_stk(
     user: User = Depends(get_current_user),
 ):
     try:
-        cid = await service.stk_push(session, data.invoice_id, data.phone)
+        cid = await service.stk_push(session, data.invoice_id, data.phone, business_id=user.business_id)
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except ValueError as e:
@@ -90,10 +90,14 @@ async def record_payment(
     user: User = Depends(get_current_user),
 ):
     """Record a cash/on-ground payment collected by a caretaker."""
-    inv = await service.apply_payment(
-        session, data.invoice_id, data.amount, data.method,
-        reference=f"caretaker-{str(user.id)[:8]}",
-    )
+    try:
+        inv = await service.apply_payment(
+            session, data.invoice_id, data.amount, data.method,
+            reference=f"caretaker-{str(user.id)[:8]}",
+            business_id=user.business_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not inv:
         raise HTTPException(status_code=404, detail="invoice not found")
     light = "green" if inv.status == InvoiceStatus.PAID.value else "red"
@@ -111,9 +115,13 @@ async def simulate(
     session: SessionDep,
     user: User = Depends(get_current_user),
 ):
-    inv = await service.apply_payment(
-        session, data.invoice_id, data.amount or 0, data.method
-    )
+    try:
+        inv = await service.apply_payment(
+            session, data.invoice_id, data.amount or 0, data.method,
+            business_id=user.business_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not inv:
         raise HTTPException(status_code=404, detail="invoice not found")
     light = "green" if inv.status == InvoiceStatus.PAID.value else "red"
@@ -444,7 +452,9 @@ async def airtel_stk(
 ):
     """Prompt an Airtel Money wallet to pay one invoice."""
     try:
-        result = await airtel.collect(session, data.invoice_id, data.phone)
+        result = await airtel.collect(
+            session, data.invoice_id, data.phone, business_id=user.business_id
+        )
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except ValueError as e:
@@ -480,7 +490,9 @@ async def flutterwave_checkout(
 ):
     """Create a hosted checkout link for one invoice."""
     try:
-        return await flutterwave.create_checkout(session, data.invoice_id)
+        return await flutterwave.create_checkout(
+            session, data.invoice_id, business_id=user.business_id
+        )
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except ValueError as e:
