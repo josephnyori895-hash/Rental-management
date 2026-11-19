@@ -95,6 +95,7 @@ async def _catalogue(session: AsyncSession, now: datetime, include_unpriced: boo
         output.append({
             "id": str(item.id), "code": item.code, "name": item.name, "description": item.description,
             "item_type": item.item_type, "pricing_model": item.pricing_model, "active": item.active,
+            "display_order": item.display_order,
             "features": item.features or {}, "currency": price.currency if price else None,
             "billing_interval": price.billing_interval if price else None,
             "amount": str(price.amount) if price else None,
