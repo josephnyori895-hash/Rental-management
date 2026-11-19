@@ -32,6 +32,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("invoice_id", "line_number", name="uq_subscription_invoice_line_number"),
     )
+    op.create_index("ix_subscription_invoice_lines_created_at", "subscription_invoice_lines", ["created_at"])
     op.create_index("ix_subscription_invoice_lines_invoice_id", "subscription_invoice_lines", ["invoice_id"])
     op.create_check_constraint("line_number_positive", "subscription_invoice_lines", "line_number >= 1")
     op.create_check_constraint("quantity_positive", "subscription_invoice_lines", "quantity >= 1")
