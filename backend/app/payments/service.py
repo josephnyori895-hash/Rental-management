@@ -67,13 +67,55 @@ async def apply_payment(
     method: str = "mpesa",
     reference: str | None = None,
     mpesa_raw: dict | None = None,
+    business_id=None,
 ) -> Invoice | None:
-    inv = await session.get(Invoice, uuid.UUID(str(invoice_id)))
+    """Apply one payment under an invoice row lock.
+
+    business_id is supplied by authenticated dashboard operations. Provider
+    callbacks omit it because the provider transaction is resolved through its
+    previously issued checkout/reference, but still pass through the same
+    amount validation and idempotency checks.
+    """
+    try:
+        parsed_invoice_id = uuid.UUID(str(invoice_id))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+    invoice_query = select(Invoice).where(Invoice.id == parsed_invoice_id)
+    if business_id is not None:
+        invoice_query = invoice_query.where(Invoice.business_id == business_id)
+    inv = await session.scalar(invoice_query.with_for_update())
     if not inv:
         return None
     if inv.status == InvoiceStatus.PAID.value:
         return inv
-    amt = Decimal(str(amount))
+
+    try:
+        amt = Decimal(str(amount)).quantize(Decimal("0.01"))
+    except Exception as exc:
+        raise ValueError("Payment amount must be a valid monetary amount") from exc
+    if not amt.is_finite() or amt <= 0:
+        raise ValueError("Payment amount must be greater than zero")
+    current_balance = Decimal(str(inv.balance or 0)).quantize(Decimal("0.01"))
+    if current_balance <= 0:
+        return inv
+    if amt > current_balance:
+        raise ValueError("Payment amount exceeds the outstanding invoice balance")
+
+    # Provider callbacks are retried. Checking after acquiring the invoice lock
+    # serializes duplicate callbacks for the same invoice and prevents a repeated
+    # partial payment from being applied twice.
+    if reference and method in {"mpesa", "airtel", "card", "bank"}:
+        existing = await session.scalar(
+            select(Payment.id).where(
+                Payment.business_id == inv.business_id,
+                Payment.method == method,
+                Payment.reference == reference,
+            ).limit(1)
+        )
+        if existing is not None:
+            return inv
+
     pay = Payment(
         business_id=inv.business_id,
         invoice_id=inv.id,
