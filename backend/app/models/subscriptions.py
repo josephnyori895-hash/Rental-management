@@ -210,6 +210,7 @@ class SubscriptionInvoiceLine(Base, UUIDMixin, TimestampMixin):
         CheckConstraint("quantity >= 1", name="quantity_positive"),
         CheckConstraint("unit_amount >= 0 AND total_amount >= 0", name="amounts_nonnegative"),
         CheckConstraint("billing_interval_snapshot IN ('monthly', 'quarterly', 'annual', 'one_time')", name="valid_billing_interval"),
+        CheckConstraint("billable_units_snapshot >= 0 AND included_units_snapshot >= 0 AND per_unit_amount_snapshot >= 0", name="unit_snapshot_nonnegative"),
     )
 
     invoice_id: Mapped[UUID] = mapped_column(
