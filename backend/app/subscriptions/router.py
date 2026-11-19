@@ -10,13 +10,14 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import SessionDep, get_current_business, get_current_user
 from app.platform_admin.dependencies import PlatformAdminDep
+from app.platform_admin.audit import record_platform_admin_event
 from app.models.business import Business
 from app.models.subscriptions import (
     BusinessSubscription, BusinessSubscriptionItem, SubscriptionCatalogItem,
@@ -220,7 +221,7 @@ async def admin_catalogue(session: SessionDep, admin: PlatformAdminDep):
 
 
 @router.post("/admin/catalogue", status_code=201)
-async def create_catalogue_item(data: CatalogItemCreate, session: SessionDep, admin: PlatformAdminDep):
+async def create_catalogue_item(data: CatalogItemCreate, session: SessionDep, admin: PlatformAdminDep, request: Request):
     existing = await session.scalar(
         select(SubscriptionCatalogItem).where(SubscriptionCatalogItem.code == data.code)
     )
@@ -229,11 +230,12 @@ async def create_catalogue_item(data: CatalogItemCreate, session: SessionDep, ad
     item = SubscriptionCatalogItem(**data.model_dump(), active=True)
     session.add(item)
     await session.flush()
+    record_platform_admin_event(session, admin, "catalogue.item.created", target_type="subscription_catalog_item", target_id=str(item.id), metadata={"code": item.code, "item_type": item.item_type}, request=request)
     return {"id": str(item.id), "code": item.code, "active": item.active}
 
 
 @router.post("/admin/catalogue/{item_id}/prices", status_code=201)
-async def create_price_version(item_id: UUID, data: PriceVersionCreate, session: SessionDep, admin: PlatformAdminDep):
+async def create_price_version(item_id: UUID, data: PriceVersionCreate, session: SessionDep, admin: PlatformAdminDep, request: Request):
     item = await session.scalar(
         select(SubscriptionCatalogItem).where(SubscriptionCatalogItem.id == item_id)
     )
@@ -260,6 +262,7 @@ async def create_price_version(item_id: UUID, data: PriceVersionCreate, session:
     price = SubscriptionPriceVersion(catalog_item_id=item.id, **data.model_dump(), active=True)
     session.add(price)
     await session.flush()
+    record_platform_admin_event(session, admin, "catalogue.price.created", target_type="subscription_catalog_item", target_id=str(item.id), metadata={"price_version_id": str(price.id), "currency": price.currency, "amount": str(price.amount), "effective_from": price.effective_from.isoformat()}, request=request)
     return {"id": str(price.id), "catalog_item_id": str(item.id),
             "currency": price.currency, "amount": str(price.amount),
             "effective_from": price.effective_from.isoformat(),
