@@ -31,7 +31,7 @@ export default function PlatformAdminConsole() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [newItem, setNewItem] = useState({ code: "", name: "", item_type: "package", pricing_model: "flat_recurring", description: "", features: "{\\n  \\n}" });
+  const [newItem, setNewItem] = useState({ code: "", name: "", item_type: "package", pricing_model: "flat_recurring", description: "", features: "{\n  \n}" });
   const [price, setPrice] = useState({ currency: "KES", amount: "0.00", included_units: "0", per_unit_amount: "0.00", effective_from: new Date(Date.now() + 60000).toISOString().slice(0, 16) });
 
   const selected = useMemo(() => items.find((item) => item.id === selectedId), [items, selectedId]);
@@ -83,7 +83,7 @@ export default function PlatformAdminConsole() {
         pricing_model: newItem.pricing_model, description: newItem.description,
         features, display_order: 0,
       });
-      setNewItem({ code: "", name: "", item_type: "package", pricing_model: "flat_recurring", description: "", features: "{\\n}" });
+      setNewItem({ code: "", name: "", item_type: "package", pricing_model: "flat_recurring", description: "", features: "{\n}" });
       const data = await request("/subscriptions/admin/catalogue", token);
       setItems(data.items || []);
       setNotice("Catalogue item created. Add an effective price before landlords can select it.");
