@@ -58,6 +58,13 @@ export const loginCaretaker = (slug: string, pin: string) =>
   req("POST", "/api/v1/auth/pin-login", { slug, pin }, false);
 export const getBoard = () => req("GET", "/api/v1/dashboard/owner/board");
 export const getProperties = () => req("GET", "/api/v1/properties");
+export const listStaff = (role?: string) =>
+  req("GET", `/api/v1/auth/staff${role ? `?role=${role}` : ""}`);
+export const assignCaretaker = (property_id: string, user_id: string | null) =>
+  req("PATCH", `/api/v1/properties/${property_id}/caretaker`, { user_id });
+export const createProperty = (data: any) => req("POST", "/api/v1/properties", data);
+export const createUnit = (pid: string, data: any) =>
+  req("POST", `/api/v1/properties/${pid}/units`, data);
 export const getUnits = (pid: string) => req("GET", `/api/v1/properties/${pid}/units`);
 export const getRooms = (pid: string) => req("GET", `/api/v1/properties/${pid}/rooms`);
 export const getPropertyLayout = (pid: string) =>
@@ -71,6 +78,8 @@ export const stk = (invoice_id: string, phone: string) =>
   req("POST", "/api/v1/payments/mpesa/stk", { invoice_id, phone });
 
 // ── Books / Invoices / History ──
+export const runRent = (year: number, month: number, dry_run = false) =>
+  req("POST", "/api/v1/billing/rent-run", { year, month, dry_run });
 export const getInvoices = (status?: string) =>
   req("GET", `/api/v1/billing/invoices${status ? `?status=${status}` : ""}`);
 export const getInvoiceDetail = (id: string) =>

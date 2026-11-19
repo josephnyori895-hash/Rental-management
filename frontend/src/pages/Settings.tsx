@@ -32,8 +32,11 @@ export default function Settings() {
   const [busCfg, setBusCfg] = useState<any>(null);
   const [reminderResult, setReminderResult] = useState<string | null>(null);
   const [loadingSms, setLoadingSms] = useState(false);
+  const [staff, setStaff] = useState<any[]>([]);
 
   const token = localStorage.getItem("rental_token");
+  const payMethods: string[] =
+    busCfg?.payment_methods || (busCfg?.payment_method ? [busCfg.payment_method] : ["mpesa"]);
 
   const refreshBg = () => setBgConfig(getBackgroundConfig());
 
@@ -47,16 +50,25 @@ export default function Settings() {
     fetch("/api/v1/notifications/business-config", {
       headers: { Authorization: `Bearer ${token}` },
     }).then((r) => r.ok ? r.json() : null).then(setBusCfg).catch(() => {});
+    fetch("/api/v1/auth/staff", {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then((r) => r.ok ? r.json() : []).then((d) => setStaff(Array.isArray(d) ? d : [])).catch(() => {});
   }, []);
 
   const saveBusiness = async (patch: any) => {
+    const previous = busCfg;
     const updated = { ...busCfg, ...patch };
     setBusCfg(updated);
-    await fetch("/api/v1/notifications/business-config", {
+    const res = await fetch("/api/v1/notifications/business-config", {
       method: "PUT",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify(updated),
     });
+    if (!res.ok) {
+      setBusCfg(previous);
+      const err = await res.json().catch(() => null);
+      alert(err?.detail || "Could not save payment settings.");
+    }
   };
 
   const saveEnrollment = async (patch: Partial<EnrollmentConfig>) => {
@@ -255,16 +267,36 @@ export default function Settings() {
             <div className="border-t border-white/[0.06] pt-4">
               <h3 className="text-sm font-semibold text-white mb-3">Payment Collections</h3>
               <div className="space-y-3">
-                <div className="flex justify-between items-center px-3 py-2.5 rounded-lg bg-slate-900/60 border border-slate-800">
-                  <span className="text-xs text-slate-300">Payment Collection Method</span>
-                  <select value={busCfg.payment_method} onChange={(e) => saveBusiness({ payment_method: e.target.value })}
-                    className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 outline-none focus:border-emerald-500/50">
-                    <option value="mpesa">M-Pesa (STK Push & Paybill)</option>
-                    <option value="bank">Bank Transfer</option>
-                  </select>
+                <div className="px-3 py-2.5 rounded-lg bg-slate-900/60 border border-slate-800 space-y-2">
+                  <span className="text-xs text-slate-300 block">Payment Collection Methods</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {[
+                      ["mpesa", "M-Pesa (STK Push & Paybill)"],
+                      ["airtel", "Airtel Money"],
+                      ["card", "Card / Online Bank (Flutterwave)"],
+                      ["bank", "Bank Transfer (manual confirmation)"],
+                    ].map(([value, label]) => {
+                      const checked = payMethods.includes(value);
+                      return (
+                        <label key={value} className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                          <input type="checkbox" checked={checked}
+                            onChange={() => {
+                              const next = checked
+                                ? payMethods.filter((m) => m !== value)
+                                : [...payMethods, value];
+                              if (!next.length) return; // keep at least one rail
+                              saveBusiness({ payment_methods: next, payment_method: next[0] });
+                            }}
+                            className="accent-emerald-500" />
+                          {label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-slate-500">Tenants reply PAY and choose from the methods enabled here.</p>
                 </div>
 
-                {busCfg.payment_method === "mpesa" && (
+                {payMethods.includes("mpesa") && (
                   <div className="space-y-1">
                     <label className="text-[10px] uppercase tracking-wider text-slate-500 block">Default MPESA Paybill / Till Number</label>
                     <input value={busCfg.mpesa_paybill || ""} onChange={(e) => saveBusiness({ mpesa_paybill: e.target.value })}
@@ -272,7 +304,7 @@ export default function Settings() {
                   </div>
                 )}
 
-                {busCfg.payment_method === "bank" && (
+                {payMethods.includes("bank") && (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 bg-slate-900/40 rounded-xl border border-slate-800">
                     <div className="space-y-1">
                       <label className="text-[10px] uppercase tracking-wider text-slate-500 block">Bank Name</label>
@@ -301,10 +333,21 @@ export default function Settings() {
 
         {active === "team" && (
           <div className="space-y-2 text-sm text-slate-300">
-            <TeamRow name="Nyorii" role="Owner" email="owner@rental.dev" />
-            <TeamRow name="Caretaker John" role="Caretaker" email="+254712345678" />
+            {staff.length === 0 ? (
+              <p className="text-[11px] text-slate-500">No team members yet.</p>
+            ) : (
+              staff.map((s: any) => (
+                <TeamRow
+                  key={s.id}
+                  name={s.full_name}
+                  role={s.role === "agent" ? "Caretaker" : s.role}
+                  email={s.phone || s.email}
+                />
+              ))
+            )}
             <p className="text-[11px] text-slate-500 pt-2">
-              Caretaker phone number is used for WhatsApp alerts. Owner can also manage via WhatsApp commands.
+              Caretakers and tenants work over WhatsApp — this console is for the owner. Assign a caretaker to each
+              building on the Properties page; anything left unassigned sends its alerts to you.
             </p>
           </div>
         )}

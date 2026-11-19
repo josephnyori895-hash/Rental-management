@@ -5,7 +5,7 @@ import {
   CheckCircle2, Droplets, Sparkles, X, Home, ShieldCheck, RotateCcw,
   Layers, Grid3X3, Square, PanelBottom,
 } from "lucide-react";
-import { getBoard, getRooms } from "../lib/api";
+import { getBoard, getRooms, getProperties, listStaff, assignCaretaker } from "../lib/api";
 import { Card, Badge, PageHeader, money, EmptyState } from "../components/ui";
 import BuildingCanvas from "../components/BuildingCanvas";
 import BlueprintCanvas from "../components/BlueprintCanvas";
@@ -37,13 +37,30 @@ export default function Properties() {
   const [drawer, setDrawer] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("building");
+  const [properties, setProperties] = useState<any[]>([]);
+  const [caretakers, setCaretakers] = useState<any[]>([]);
+  const [assignError, setAssignError] = useState("");
 
   useEffect(() => {
     getBoard().then((d) => {
       setBoard(d);
       if (d.hostels?.length) setSelected(d.hostels[0].property_id);
     }).catch(() => {});
+    getProperties().then((d) => setProperties(Array.isArray(d) ? d : [])).catch(() => {});
+    listStaff("agent").then((d) => setCaretakers(Array.isArray(d) ? d : [])).catch(() => {});
   }, []);
+
+  const assign = async (propertyId: string, userId: string | null) => {
+    setAssignError("");
+    try {
+      await assignCaretaker(propertyId, userId);
+      setProperties((list) =>
+        list.map((p) => (p.id === propertyId ? { ...p, manager_id: userId } : p))
+      );
+    } catch (e: any) {
+      setAssignError(e.message || "Could not assign caretaker");
+    }
+  };
 
   useEffect(() => {
     if (!selected) return;
@@ -79,6 +96,10 @@ export default function Properties() {
     <div className="space-y-5">
       <PageHeader title="Properties" sub="Live building view — every room, lit by rent status" />
 
+      {assignError && (
+        <div className="text-xs text-rose-400 px-1">{assignError}</div>
+      )}
+
       {/* Property selector */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {board.hostels.map((h: any) => (
@@ -101,6 +122,29 @@ export default function Properties() {
                 <div className="text-sm font-semibold text-white">{h.name}</div>
                 <div className="text-[11px] text-slate-500">{h.total_units} rooms · {h.occupied} occupied</div>
               </div>
+            </div>
+
+            {/* Who runs this building — caretakers live on WhatsApp, not in this console. */}
+            <div className="mt-3 pt-3 border-t border-slate-800/60"
+              onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-1.5 mb-1.5 text-[10px] uppercase tracking-wider text-slate-500">
+                <ShieldCheck className="w-3 h-3 text-emerald-400/70" /> Caretaker
+              </div>
+              {caretakers.length > 0 ? (
+                <select
+                  value={properties.find((p: any) => p.id === h.property_id)?.manager_id ?? ""}
+                  onChange={(e) => assign(h.property_id, e.target.value || null)}
+                  className="w-full bg-slate-950/70 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-300 focus:border-emerald-500/50 outline-none transition">
+                  <option value="">Unassigned — alerts come to you</option>
+                  {caretakers.map((c: any) => (
+                    <option key={c.id} value={c.id}>{c.full_name}</option>
+                  ))}
+                </select>
+              ) : (
+                <div className="text-[10px] text-slate-600">
+                  No caretakers yet — add them on WhatsApp first.
+                </div>
+              )}
             </div>
           </Card>
         ))}

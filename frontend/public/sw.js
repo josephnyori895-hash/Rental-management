@@ -1,32 +1,69 @@
-const CACHE = "rental-os-v1";
-const PRECACHE_URLS = ["/", "/index.html"];
+const CACHE = "rental-os-v2";
+const SHELL = ["/", "/index.html"];
 
-self.addEventListener("install", (e) => {
-  e.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(PRECACHE_URLS))
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
-self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    )
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
+      .then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-self.addEventListener("fetch", (e) => {
-  if (e.request.url.includes("/api/")) {
-    e.respondWith(
-      fetch(e.request).catch(() =>
-        caches.match(e.request).then((r) => r || new Response(JSON.stringify({ offline: true }), { headers: { "Content-Type": "application/json" } }))
-      )
+function isNavigation(request) {
+  return request.mode === "navigate" || (request.method === "GET" && new URL(request.url).pathname === "/");
+}
+
+async function networkFirst(request) {
+  const cache = await caches.open(CACHE);
+  try {
+    const fresh = await fetch(request);
+    if (fresh && fresh.ok) cache.put(request, fresh.clone());
+    return fresh;
+  } catch (error) {
+    const cached = (await cache.match(request)) || (await cache.match("/index.html")) || (await cache.match("/"));
+    if (cached) return cached;
+    throw error;
+  }
+}
+
+async function cacheFirst(request) {
+  const cache = await caches.open(CACHE);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+  const fresh = await fetch(request);
+  if (fresh && fresh.ok) cache.put(request, fresh.clone());
+  return fresh;
+}
+
+self.addEventListener("fetch", (event) => {
+  const { request } = event;
+  if (request.method !== "GET") return;
+
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return;
+
+  if (url.pathname.startsWith("/api/")) {
+    event.respondWith(
+      fetch(request).catch(async () => {
+        const cached = await caches.match(request);
+        return (
+          cached ||
+          new Response(JSON.stringify({ offline: true }), {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      })
     );
     return;
   }
-  e.respondWith(
-    caches.match(e.request).then((r) => r || fetch(e.request))
-  );
+
+  event.respondWith(isNavigation(request) ? networkFirst(request) : cacheFirst(request));
 });

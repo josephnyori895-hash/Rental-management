@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Search, CreditCard, DollarSign, Download, MessageSquare } from "lucide-react";
-import { getPaymentHistory, getInvoices } from "../lib/api";
+import {
+  Search, CreditCard, DollarSign, Download, MessageSquare,
+  CalendarDays, Eye, Play, Loader2,
+} from "lucide-react";
+import { getPaymentHistory, getInvoices, runRent } from "../lib/api";
 import { Card, PageHeader, Badge, EmptyState, money } from "../components/ui";
 import TransactionMessageModal from "../components/TransactionMessageModal";
 
@@ -13,12 +16,56 @@ export default function Payments() {
   const [loading, setLoading] = useState(true);
   const [messagePaymentId, setMessagePaymentId] = useState<string | null>(null);
 
-  useEffect(() => {
-    Promise.all([
+  // ── Monthly rent run ──
+  const [rentMonth, setRentMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [rentBusy, setRentBusy] = useState(false);
+  const [rentNotice, setRentNotice] = useState("");
+  const [rentError, setRentError] = useState("");
+
+  const loadData = useCallback(async () => {
+    await Promise.all([
       getPaymentHistory().then((d) => setPayments(d.payments || [])).catch(() => {}),
       getInvoices().then((d) => setInvoices(d.invoices || [])).catch(() => {}),
     ]).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const monthLabel = () => {
+    const [year, month] = rentMonth.split("-").map(Number);
+    if (!year || !month) return rentMonth;
+    return new Date(year, month - 1, 1).toLocaleString("en-KE", { month: "long", year: "numeric" });
+  };
+
+  const runMonthlyRent = async (dryRun: boolean) => {
+    const [year, month] = rentMonth.split("-").map(Number);
+    if (!year || !month) { setRentError("Pick a month first."); return; }
+    if (!dryRun && !window.confirm(`Raise rent invoices for ${monthLabel()}? Leases already billed for the month are skipped.`)) {
+      return;
+    }
+    setRentBusy(true); setRentNotice(""); setRentError("");
+    try {
+      const result = await runRent(year, month, dryRun);
+      const created = result.created_count ?? 0;
+      const skipped = result.skipped_count ?? 0;
+      const invoices = `${created} invoice${created === 1 ? "" : "s"}`;
+      const leases = `${skipped} lease${skipped === 1 ? "" : "s"}`;
+      const total = `KES ${money(result.total_billed ?? 0)}`;
+      setRentNotice(
+        dryRun
+          ? `Preview: ${invoices} · ${total}. ${leases} already billed. Nothing was written.`
+          : `${invoices} raised · ${total}. ${leases} already billed.`
+      );
+      if (!dryRun) await loadData();
+    } catch (e) {
+      setRentError((e as Error).message);
+    } finally {
+      setRentBusy(false);
+    }
+  };
 
   const filteredPay = payments.filter((p) =>
     p.tenant_name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -73,6 +120,54 @@ export default function Payments() {
           </button>
         ))}
       </div>
+
+      {tab === "invoices" && (
+        <Card className="p-4" hover={false}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-sky-500/10 flex items-center justify-center shrink-0">
+                <CalendarDays className="w-4 h-4 text-sky-400" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-slate-200">Monthly rent run</div>
+                <div className="text-[11px] text-slate-500">
+                  Raises a rent invoice for every active lease. Safe to re-run — leases already
+                  billed for the month are skipped.
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="month"
+                value={rentMonth}
+                onChange={(e) => { setRentMonth(e.target.value); setRentNotice(""); setRentError(""); }}
+                className="bg-slate-800 border border-slate-700 focus:border-emerald-500/60 rounded-lg px-2.5 py-1.5 text-sm text-white outline-none"
+              />
+              <button
+                onClick={() => runMonthlyRent(true)}
+                disabled={rentBusy}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700/60 disabled:opacity-50 transition"
+              >
+                {rentBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
+                Preview
+              </button>
+              <button
+                onClick={() => runMonthlyRent(false)}
+                disabled={rentBusy}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 disabled:opacity-50 transition"
+              >
+                {rentBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                Raise invoices
+              </button>
+            </div>
+          </div>
+          {(rentNotice || rentError) && (
+            <div className={`mt-3 text-[11px] ${rentError ? "text-rose-300" : "text-emerald-300"}`}>
+              {rentError || rentNotice}
+            </div>
+          )}
+        </Card>
+      )}
 
       {loading ? (
         <div className="text-slate-500 py-16 text-center">Loading…</div>
