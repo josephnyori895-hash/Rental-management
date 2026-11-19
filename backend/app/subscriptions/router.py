@@ -238,6 +238,8 @@ async def select_subscription(
         if open_invoice:
             raise HTTPException(status_code=409, detail="An unpaid subscription invoice already exists")
         previous.status = "cancelled"
+        previous.cancelled_at = now
+        previous.cancellation_requested_at = now
         session.add(BusinessSubscriptionEvent(
             business_id=business.id, subscription_id=previous.id,
             event_type="selection.replaced", actor_user_id=owner.id,
