@@ -103,7 +103,7 @@ async def apply_payment(
     # Provider callbacks are retried. Checking after acquiring the invoice lock
     # serializes duplicate callbacks for the same invoice and prevents a repeated
     # partial payment from being applied twice.
-    if reference and method in {"mpesa", "airtel", "card", "bank"}:
+    if reference and mpesa_raw is not None and method in {"mpesa", "airtel", "card", "bank"}:
         existing = await session.scalar(
             select(Payment.id).where(
                 Payment.business_id == inv.business_id,
