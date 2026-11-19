@@ -78,3 +78,65 @@ async def test_due_period_end_cancellation_is_processed_once(businesses, db_sess
         )
     )).all()
     assert len(events) == 1
+
+
+@requires_db
+async def test_verified_platform_payment_activates_only_its_subscription_invoice(businesses, db_session):
+    from sqlalchemy import select, func
+    from app.models.subscriptions import (
+        BusinessSubscription, SubscriptionInvoice, SubscriptionPayment,
+    )
+
+    first, _ = businesses
+    subscription = BusinessSubscription(
+        business_id=first.business.id,
+        status="draft",
+        currency="KES",
+        billing_interval="monthly",
+    )
+    db_session.add(subscription)
+    await db_session.flush()
+    invoice = SubscriptionInvoice(
+        business_id=first.business.id,
+        subscription_id=subscription.id,
+        invoice_number="ROS-SUB-TEST-0001",
+        currency="KES",
+        billing_interval="monthly",
+        subtotal=Decimal("100.00"),
+        total=Decimal("100.00"),
+        status="open",
+        due_at=datetime.now(timezone.utc) + timedelta(days=7),
+    )
+    db_session.add(invoice)
+    await db_session.flush()
+
+    result = await apply_verified_platform_subscription_payment(
+        db_session,
+        invoice_id=invoice.id,
+        provider="rental-os-test-provider",
+        provider_reference="platform-ref-001",
+        amount=Decimal("100.00"),
+        currency="KES",
+        provider_event_verified=True,
+    )
+    assert result["status"] == "succeeded"
+    assert result["idempotent"] is False
+    assert invoice.status == "paid"
+    assert subscription.status == "active"
+    assert subscription.current_period_end is not None
+
+    duplicate = await apply_verified_platform_subscription_payment(
+        db_session,
+        invoice_id=invoice.id,
+        provider="rental-os-test-provider",
+        provider_reference="platform-ref-001",
+        amount=Decimal("100.00"),
+        currency="KES",
+        provider_event_verified=True,
+    )
+    assert duplicate["idempotent"] is True
+    assert await db_session.scalar(
+        select(func.count()).select_from(SubscriptionPayment).where(
+            SubscriptionPayment.invoice_id == invoice.id
+        )
+    ) == 1
