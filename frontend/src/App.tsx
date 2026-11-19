@@ -25,6 +25,7 @@ import NotificationDropdown from "./components/NotificationDropdown";
 import TenantDetailModal from "./components/TenantDetailModal";
 import Background from "./components/Background";
 import LoginBackground from "./components/LoginBackground";
+import PlatformAdminConsole from "./pages/PlatformAdminConsole";
 
 import {
   LayoutDashboard, Building2, Users, CreditCard, Wrench, Receipt,
