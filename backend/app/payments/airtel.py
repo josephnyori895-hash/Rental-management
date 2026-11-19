@@ -57,15 +57,24 @@ async def _token(client: httpx.AsyncClient) -> str:
     return response.json()["access_token"]
 
 
-async def collect(session: AsyncSession, invoice_id: str, phone: str) -> dict:
-    """Prompt an Airtel Money wallet to pay one invoice."""
+async def collect(
+    session: AsyncSession, invoice_id: str, phone: str, business_id=None
+) -> dict:
+    """Prompt an Airtel Money wallet to pay an invoice owned by this business."""
     if not _configured():
         raise RuntimeError(
             "Airtel Money is not configured. Set AIRTEL_CLIENT_ID and "
             "AIRTEL_CLIENT_SECRET."
         )
 
-    inv = await session.get(Invoice, UUID(str(invoice_id)))
+    try:
+        parsed_invoice_id = UUID(str(invoice_id))
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise ValueError("Invoice not found") from exc
+    invoice_query = select(Invoice).where(Invoice.id == parsed_invoice_id)
+    if business_id is not None:
+        invoice_query = invoice_query.where(Invoice.business_id == business_id)
+    inv = await session.scalar(invoice_query)
     if inv is None:
         raise ValueError("Invoice not found")
     if inv.balance <= 0:
