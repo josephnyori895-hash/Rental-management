@@ -26,7 +26,7 @@ def upgrade() -> None:
         sa.Column("is_superadmin", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint("email", name="uq_platform_admin_email"),
+        sa.UniqueConstraint("email", name="uq_platform_admins_email"),
     )
     op.create_index("ix_platform_admins_created_at", "platform_admins", ["created_at"])
 
