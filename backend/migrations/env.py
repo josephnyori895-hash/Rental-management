@@ -30,6 +30,8 @@ from app.documents.models import *  # Document
 # registered by the package import above. Without this, autogenerate sees the
 # accounting tables as extraneous and proposes dropping them.
 from app.accounting.models import *  # ChartOfAccount
+from app.models.expense import *  # Expense
+from app.models.maintenance import *  # MaintenanceTicket
 
 # Reuse the application's DSN translation, so migrations connect exactly as the
 # app does. A hosted Postgres DSN carries `?sslmode=require`, which SQLAlchemy's
