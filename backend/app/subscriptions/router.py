@@ -15,7 +15,8 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import SessionDep, get_current_business, get_current_user, require_roles
+from app.api.deps import SessionDep, get_current_business, get_current_user
+from app.platform_admin.dependencies import PlatformAdminDep
 from app.models.business import Business
 from app.models.subscriptions import (
     BusinessSubscription, BusinessSubscriptionItem, SubscriptionCatalogItem,
@@ -212,13 +213,13 @@ async def check_entitlement(
             "entitlements": entitlements}
 
 
-@router.get("/admin/catalogue", dependencies=[Depends(require_roles("platform_admin"))])
-async def admin_catalogue(session: SessionDep):
+@router.get("/admin/catalogue")
+async def admin_catalogue(session: SessionDep, admin: PlatformAdminDep):
     return {"items": await _catalogue(session, datetime.now(timezone.utc))}
 
 
-@router.post("/admin/catalogue", status_code=201, dependencies=[Depends(require_roles("platform_admin"))])
-async def create_catalogue_item(data: CatalogItemCreate, session: SessionDep):
+@router.post("/admin/catalogue", status_code=201)
+async def create_catalogue_item(data: CatalogItemCreate, session: SessionDep, admin: PlatformAdminDep):
     existing = await session.scalar(
         select(SubscriptionCatalogItem).where(SubscriptionCatalogItem.code == data.code)
     )
@@ -230,9 +231,8 @@ async def create_catalogue_item(data: CatalogItemCreate, session: SessionDep):
     return {"id": str(item.id), "code": item.code, "active": item.active}
 
 
-@router.post("/admin/catalogue/{item_id}/prices", status_code=201,
-             dependencies=[Depends(require_roles("platform_admin"))])
-async def create_price_version(item_id: UUID, data: PriceVersionCreate, session: SessionDep):
+@router.post("/admin/catalogue/{item_id}/prices", status_code=201)
+async def create_price_version(item_id: UUID, data: PriceVersionCreate, session: SessionDep, admin: PlatformAdminDep):
     item = await session.scalar(
         select(SubscriptionCatalogItem).where(SubscriptionCatalogItem.id == item_id)
     )
