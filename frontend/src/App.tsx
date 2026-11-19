@@ -87,13 +87,15 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const role = token ? decodeRole() : null;
+  const isPlatformAdminPath = (window.location.pathname.replace(/\\/+$/, "") || "/") === "/platform-admin";
 
   useEffect(() => {
+    if (isPlatformAdminPath) return;
     if (token && role && role !== "owner") {
       clearToken();
       setToken(null);
     }
-  }, [token, role]);
+  }, [token, role, isPlatformAdminPath]);
 
   const [view, setView] = useState<View>("overview");
 
@@ -129,10 +131,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || isPlatformAdminPath) return;
     const stop = startNotificationPolling(onNotification, 10000);
     return stop;
-  }, [token, onNotification]);
+  }, [token, onNotification, isPlatformAdminPath]);
 
   useEffect(() => {
     const onNavigate = (e: Event) => {
