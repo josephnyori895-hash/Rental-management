@@ -6,9 +6,9 @@ starts an STK push, or alters landlord rent invoices/payments.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -16,13 +16,14 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import case, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import SessionDep, get_current_business, get_current_user
+from app.api.deps import OwnerDep, SessionDep, get_current_business, get_current_user
 from app.platform_admin.dependencies import PlatformAdminDep
 from app.platform_admin.audit import record_platform_admin_event
 from app.models.business import Business
 from app.models.subscriptions import (
     BusinessSubscription, BusinessSubscriptionItem, SubscriptionCatalogItem,
-    SubscriptionPriceVersion,
+    SubscriptionPriceVersion, SubscriptionInvoice, SubscriptionInvoiceLine,
+    BusinessSubscriptionEvent,
 )
 from app.subscriptions.service import (
     billable_unit_count, calculate_item_total, current_price, get_entitlements,
@@ -296,3 +297,160 @@ async def create_price_version(item_id: UUID, data: PriceVersionCreate, session:
             "effective_to": price.effective_to.isoformat() if price.effective_to else None}
 
 
+
+
+@router.post("/{subscription_id}/invoice", status_code=201)
+async def issue_subscription_invoice(
+    subscription_id: UUID,
+    session: SessionDep,
+    business: Business = Depends(get_current_business),
+    owner: OwnerDep = None,
+):
+    """Issue a Rental OS subscription invoice for a saved draft selection.
+
+    This creates only a platform invoice. It does not call a payment provider,
+    alter landlord rent records, or activate the subscription.
+    """
+    sub = await session.scalar(
+        select(BusinessSubscription)
+        .where(
+            BusinessSubscription.id == subscription_id,
+            BusinessSubscription.business_id == business.id,
+        )
+        .with_for_update()
+    )
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subscription selection not found")
+    if sub.status != "draft":
+        raise HTTPException(status_code=409, detail="Only a draft selection can be invoiced")
+
+    existing = await session.scalar(
+        select(SubscriptionInvoice)
+        .where(
+            SubscriptionInvoice.subscription_id == sub.id,
+            SubscriptionInvoice.status.in_(("draft", "open")),
+        )
+        .order_by(SubscriptionInvoice.created_at.desc())
+        .limit(1)
+    )
+    if existing:
+        return {
+            "invoice_id": str(existing.id), "invoice_number": existing.invoice_number,
+            "status": existing.status, "currency": existing.currency,
+            "total": str(existing.total), "due_at": existing.due_at.isoformat() if existing.due_at else None,
+            "idempotent": True,
+        }
+
+    items = (await session.scalars(
+        select(BusinessSubscriptionItem)
+        .where(BusinessSubscriptionItem.subscription_id == sub.id)
+        .order_by(BusinessSubscriptionItem.created_at, BusinessSubscriptionItem.id)
+    )).all()
+    if not items:
+        raise HTTPException(status_code=409, detail="Subscription selection has no billable items")
+    total = sum((Decimal(item.total_amount_snapshot) for item in items), Decimal("0.00"))
+    if total <= 0:
+        raise HTTPException(status_code=409, detail="Zero-value subscriptions need an explicit activation flow")
+
+    now = datetime.now(timezone.utc)
+    invoice = SubscriptionInvoice(
+        business_id=business.id,
+        subscription_id=sub.id,
+        invoice_number=f"ROS-SUB-{now:%Y%m%d}-{uuid4().hex[:8].upper()}",
+        currency=sub.currency,
+        billing_interval=sub.billing_interval,
+        subtotal=total,
+        total=total,
+        status="open",
+        due_at=now + timedelta(days=7),
+    )
+    session.add(invoice)
+    await session.flush()
+    for index, item in enumerate(items, start=1):
+        session.add(SubscriptionInvoiceLine(
+            invoice_id=invoice.id,
+            line_number=index,
+            item_code_snapshot=item.item_code_snapshot,
+            item_name_snapshot=item.item_name_snapshot,
+            quantity=item.quantity,
+            billing_interval_snapshot=item.billing_interval_snapshot,
+            unit_amount=item.unit_amount_snapshot,
+            total_amount=item.total_amount_snapshot,
+            features_snapshot=item.features_snapshot or {},
+        ))
+    session.add(BusinessSubscriptionEvent(
+        business_id=business.id,
+        subscription_id=sub.id,
+        event_type="invoice.issued",
+        actor_user_id=owner.id,
+        event_metadata={"invoice_id": str(invoice.id), "invoice_number": invoice.invoice_number,
+                        "currency": invoice.currency, "total": str(invoice.total)},
+    ))
+    await session.flush()
+    return {
+        "invoice_id": str(invoice.id), "invoice_number": invoice.invoice_number,
+        "status": invoice.status, "currency": invoice.currency,
+        "billing_interval": invoice.billing_interval, "total": str(invoice.total),
+        "due_at": invoice.due_at.isoformat(), "idempotent": False,
+        "notice": "Rental OS subscription invoice created. No payment was initiated and the subscription remains a draft.",
+    }
+
+
+@router.get("/invoices")
+async def list_subscription_invoices(
+    session: SessionDep,
+    business: Business = Depends(get_current_business),
+    limit: int = 50,
+    offset: int = 0,
+):
+    limit = max(1, min(limit, 100))
+    offset = max(0, offset)
+    invoices = (await session.scalars(
+        select(SubscriptionInvoice)
+        .where(SubscriptionInvoice.business_id == business.id)
+        .order_by(SubscriptionInvoice.created_at.desc())
+        .limit(limit).offset(offset)
+    )).all()
+    return {"invoices": [{
+        "id": str(invoice.id), "invoice_number": invoice.invoice_number,
+        "subscription_id": str(invoice.subscription_id), "status": invoice.status,
+        "currency": invoice.currency, "total": str(invoice.total),
+        "due_at": invoice.due_at.isoformat() if invoice.due_at else None,
+        "paid_at": invoice.paid_at.isoformat() if invoice.paid_at else None,
+    } for invoice in invoices], "limit": limit, "offset": offset}
+
+
+@router.get("/invoices/{invoice_id}")
+async def get_subscription_invoice(
+    invoice_id: UUID,
+    session: SessionDep,
+    business: Business = Depends(get_current_business),
+):
+    invoice = await session.scalar(
+        select(SubscriptionInvoice).where(
+            SubscriptionInvoice.id == invoice_id,
+            SubscriptionInvoice.business_id == business.id,
+        )
+    )
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Subscription invoice not found")
+    lines = (await session.scalars(
+        select(SubscriptionInvoiceLine)
+        .where(SubscriptionInvoiceLine.invoice_id == invoice.id)
+        .order_by(SubscriptionInvoiceLine.line_number)
+    )).all()
+    return {
+        "id": str(invoice.id), "invoice_number": invoice.invoice_number,
+        "subscription_id": str(invoice.subscription_id), "status": invoice.status,
+        "currency": invoice.currency, "billing_interval": invoice.billing_interval,
+        "subtotal": str(invoice.subtotal), "total": str(invoice.total),
+        "due_at": invoice.due_at.isoformat() if invoice.due_at else None,
+        "paid_at": invoice.paid_at.isoformat() if invoice.paid_at else None,
+        "lines": [{
+            "line_number": line.line_number, "code": line.item_code_snapshot,
+            "name": line.item_name_snapshot, "quantity": line.quantity,
+            "billing_interval": line.billing_interval_snapshot,
+            "unit_amount": str(line.unit_amount), "total_amount": str(line.total_amount),
+            "features": line.features_snapshot or {},
+        } for line in lines],
+    }
