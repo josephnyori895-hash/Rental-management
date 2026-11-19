@@ -31,7 +31,7 @@ export default function PlatformAdminConsole() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [newItem, setNewItem] = useState({ code: "", name: "", item_type: "package", pricing_model: "flat_recurring", description: "" });
+  const [newItem, setNewItem] = useState({ code: "", name: "", item_type: "package", pricing_model: "flat_recurring", description: "", features: "{\\n  \\n}" });
   const [price, setPrice] = useState({ currency: "KES", amount: "0.00", included_units: "0", per_unit_amount: "0.00", effective_from: new Date(Date.now() + 60000).toISOString().slice(0, 16) });
 
   const selected = useMemo(() => items.find((item) => item.id === selectedId), [items, selectedId]);
@@ -74,10 +74,16 @@ export default function PlatformAdminConsole() {
     e.preventDefault(); if (!token) return;
     setBusy(true); setError(""); setNotice("");
     try {
+      let features: Record<string, unknown>;
+      try { features = JSON.parse(newItem.features || "{}"); }
+      catch { throw new Error("Feature entitlements must be valid JSON."); }
+      if (!features || Array.isArray(features) || typeof features !== "object") throw new Error("Feature entitlements must be a JSON object.");
       await request("/subscriptions/admin/catalogue", token, "POST", {
-        ...newItem, features: {}, display_order: 0,
+        code: newItem.code, name: newItem.name, item_type: newItem.item_type,
+        pricing_model: newItem.pricing_model, description: newItem.description,
+        features, display_order: 0,
       });
-      setNewItem({ code: "", name: "", item_type: "package", pricing_model: "flat_recurring", description: "" });
+      setNewItem({ code: "", name: "", item_type: "package", pricing_model: "flat_recurring", description: "", features: "{\\n}" });
       const data = await request("/subscriptions/admin/catalogue", token);
       setItems(data.items || []);
       setNotice("Catalogue item created. Add an effective price before landlords can select it.");
@@ -157,6 +163,7 @@ export default function PlatformAdminConsole() {
                 <select value={newItem.item_type} onChange={(e) => setNewItem({ ...newItem, item_type: e.target.value })} className="rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm"><option value="package">Base package</option><option value="addon">Optional add-on</option></select>
                 <select value={newItem.pricing_model} onChange={(e) => setNewItem({ ...newItem, pricing_model: e.target.value })} className="rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm"><option value="flat_recurring">Flat recurring</option><option value="per_billable_unit">Per billable unit</option><option value="one_time">One time</option></select>
                 <textarea placeholder="Description (optional)" value={newItem.description} onChange={(e) => setNewItem({ ...newItem, description: e.target.value })} className="min-h-20 rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm sm:col-span-2" />
+                <label className="text-xs text-slate-400 sm:col-span-2">Feature entitlements (JSON)<textarea value={newItem.features} onChange={(e) => setNewItem({ ...newItem, features: e.target.value })} placeholder={'{"reports_advanced": true, "staff_limit": 5}'} className="mt-1 min-h-24 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 font-mono text-xs text-white" /></label>
               </div>
               <button disabled={busy} className="mt-4 rounded-lg bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">Create catalogue item</button>
             </form>
