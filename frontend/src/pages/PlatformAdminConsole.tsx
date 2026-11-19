@@ -27,6 +27,10 @@ export default function PlatformAdminConsole() {
   const [password, setPassword] = useState("");
   const [admin, setAdmin] = useState<any>(null);
   const [items, setItems] = useState<CatalogItem[]>([]);
+  const [overview, setOverview] = useState<any>(null);
+  const [platformSubscriptions, setPlatformSubscriptions] = useState<any[]>([]);
+  const [platformInvoices, setPlatformInvoices] = useState<any[]>([]);
+  const [platformPayments, setPlatformPayments] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -40,12 +44,20 @@ export default function PlatformAdminConsole() {
   useEffect(() => { if (selected) setEditItem({ name: selected.name, description: selected.description || "", features: JSON.stringify(selected.features || {}, null, 2), active: selected.active, display_order: selected.display_order || 0 }); }, [selected]);
 
   async function loadCatalogue(activeToken: string) {
-    const [profile, catalogue] = await Promise.all([
+    const [profile, catalogue, stats, subscriptions, invoices, payments] = await Promise.all([
       request("/platform-admin/auth/me", activeToken),
       request("/subscriptions/admin/catalogue", activeToken),
+      request("/platform-admin/overview", activeToken),
+      request("/platform-admin/subscriptions", activeToken),
+      request("/platform-admin/invoices", activeToken),
+      request("/platform-admin/payments", activeToken),
     ]);
     setAdmin(profile);
     setItems(catalogue.items || []);
+    setOverview(stats);
+    setPlatformSubscriptions(subscriptions.subscriptions || []);
+    setPlatformInvoices(invoices.invoices || []);
+    setPlatformPayments(payments.payments || []);
     setSelectedId((current) => current || catalogue.items?.[0]?.id || "");
   }
 
@@ -146,6 +158,19 @@ export default function PlatformAdminConsole() {
         <div className="mb-8"><p className="text-sm text-emerald-300">PLATFORM CONTROL</p><h1 className="mt-1 text-3xl font-semibold">Subscription catalogue</h1><p className="mt-2 max-w-3xl text-sm text-slate-400">Configure the Basic package and optional add-ons. Prices are effective-dated; changes do not rewrite existing subscription snapshots.</p></div>
         {error && <p role="alert" className="mb-4 rounded-xl border border-rose-400/20 bg-rose-400/10 p-3 text-sm text-rose-200">{error}</p>}
         {notice && <p role="status" className="mb-4 rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-200">{notice}</p>}
+        <section className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            ["Businesses", overview?.businesses ?? "—"],
+            ["Active subscriptions", overview?.active_subscriptions ?? "—"],
+            ["Trials", overview?.trialing_subscriptions ?? "—"],
+            ["Open platform invoices", overview?.open_subscription_invoices ?? "—"],
+          ].map(([label, value]) => <div key={label} className="rounded-2xl border border-white/10 bg-slate-900/60 p-4"><p className="text-xs text-slate-500">{label}</p><p className="mt-2 text-2xl font-semibold">{value}</p></div>)}
+        </section>
+        <section className="mb-6 grid gap-6 xl:grid-cols-2">
+          <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-5"><h2 className="font-semibold">Recent subscriptions</h2><div className="mt-3 space-y-2">{platformSubscriptions.slice(0, 6).map((sub) => <div key={sub.id} className="flex items-center justify-between gap-3 border-b border-white/5 py-2 text-sm"><span className="min-w-0"><strong className="block truncate">{sub.business_name}</strong><span className="text-xs text-slate-500">{sub.billing_interval} · {sub.currency}</span></span><span className="rounded-full bg-white/5 px-2 py-1 text-xs capitalize text-slate-300">{sub.status}</span></div>)}{!platformSubscriptions.length && <p className="text-sm text-slate-500">No subscriptions recorded yet.</p>}</div></div>
+          <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-5"><h2 className="font-semibold">Recent platform invoices</h2><div className="mt-3 space-y-2">{platformInvoices.slice(0, 6).map((invoice) => <div key={invoice.id} className="flex items-center justify-between gap-3 border-b border-white/5 py-2 text-sm"><span className="min-w-0"><strong className="block truncate">{invoice.business_name}</strong><span className="text-xs text-slate-500">{invoice.invoice_number}</span></span><span className="text-right"><strong>{invoice.currency} {invoice.total}</strong><span className="block text-xs capitalize text-slate-500">{invoice.status}</span></span></div>)}{!platformInvoices.length && <p className="text-sm text-slate-500">No platform invoices yet.</p>}</div></div>
+        </section>
+        <section className="mb-6 rounded-2xl border border-white/10 bg-slate-900/60 p-5"><h2 className="font-semibold">Platform subscription receipts</h2><p className="mt-1 text-xs text-slate-500">Only verified Rental OS subscription payments appear here; landlord rent collections are excluded.</p><div className="mt-3 flex flex-wrap gap-3">{platformPayments.slice(0, 6).map((payment) => <div key={payment.id} className="rounded-xl border border-white/10 bg-slate-950/50 px-3 py-2"><p className="text-sm font-medium">{payment.currency} {payment.amount}</p><p className="text-xs text-slate-500">{payment.business_name} · ••••{payment.reference_suffix}</p></div>)}{!platformPayments.length && <p className="text-sm text-slate-500">No platform subscription payments received.</p>}</div></section>
         <div className="grid gap-6 lg:grid-cols-[1.1fr_.9fr]">
           <section className="rounded-2xl border border-white/10 bg-slate-900/60 p-5">
             <div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-semibold">Current catalogue</h2><span className="text-xs text-slate-500">{items.length} items</span></div>
