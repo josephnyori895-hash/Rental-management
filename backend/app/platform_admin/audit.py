@@ -19,7 +19,6 @@ def record_platform_admin_event(
     request: Request | None = None,
 ) -> None:
     """Append an audit record; database trigger prevents later mutation/deletion."""
-    forwarded = request.headers.get("x-forwarded-for", "") if request else ""
     # Do not trust arbitrary proxy chains; record only the direct peer address.
     peer = request.client.host if request and request.client else None
     session.add(PlatformAdminEvent(
