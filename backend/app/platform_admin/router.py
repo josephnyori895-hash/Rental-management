@@ -119,6 +119,7 @@ async def platform_admin_subscriptions(
         "business_name": name, "business_slug": slug,
         "status": sub.status, "currency": sub.currency,
         "billing_interval": sub.billing_interval,
+        "cancel_at_period_end": sub.cancel_at_period_end,
         "starts_at": sub.starts_at.isoformat() if sub.starts_at else None,
         "current_period_end": sub.current_period_end.isoformat() if sub.current_period_end else None,
     } for sub, name, slug in rows], "limit": limit, "offset": offset}
