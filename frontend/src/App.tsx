@@ -26,23 +26,25 @@ import TenantDetailModal from "./components/TenantDetailModal";
 import Background from "./components/Background";
 import LoginBackground from "./components/LoginBackground";
 import PlatformAdminConsole from "./pages/PlatformAdminConsole";
+import SubscriptionPage from "./pages/SubscriptionPage";
 
 import {
   LayoutDashboard, Building2, Users, CreditCard, Wrench, Receipt,
   BarChart3, BookOpen, Calendar, History, UserCircle, Settings as Cog,
-  LogOut, Menu, X, Zap, Bell, ChevronLeft,
+  LogOut, Menu, X, Zap, Bell, ChevronLeft, Package,
 } from "lucide-react";
 
 type View =
   | "overview" | "properties" | "tenants" | "payments" | "maintenance"
   | "expenses" | "utilities" | "reports" | "books" | "calendar" | "history"
-  | "portal" | "settings" | "enroll" | "tenant";
+  | "portal" | "settings" | "enroll" | "tenant" | "subscription";
 
 const NAV: { key: View; label: string; icon: React.ReactNode }[] = [
   { key: "overview", label: "Overview", icon: <LayoutDashboard className="w-4 h-4" /> },
   { key: "properties", label: "Properties", icon: <Building2 className="w-4 h-4" /> },
   { key: "tenants", label: "Tenants", icon: <Users className="w-4 h-4" /> },
   { key: "payments", label: "Payments", icon: <CreditCard className="w-4 h-4" /> },
+  { key: "subscription", label: "Plan & Add-ons", icon: <Package className="w-4 h-4" /> },
   { key: "maintenance", label: "Maintenance", icon: <Wrench className="w-4 h-4" /> },
   { key: "expenses", label: "Expenses", icon: <Receipt className="w-4 h-4" /> },
   { key: "utilities", label: "Utilities", icon: <Zap className="w-4 h-4" /> },
@@ -371,6 +373,7 @@ export default function App() {
             {view === "properties" && <Properties />}
             {view === "tenants" && <Tenants />}
             {view === "payments" && <Payments />}
+            {view === "subscription" && <SubscriptionPage />}
             {view === "maintenance" && <Maintenance />}
             {view === "expenses" && <Expenses />}
             {view === "utilities" && <Utilities />}
