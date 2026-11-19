@@ -113,6 +113,11 @@ class BusinessSubscriptionItem(Base, UUIDMixin, TimestampMixin):
         UniqueConstraint("subscription_id", "catalog_item_id", name="uq_subscription_item_catalog"),
         CheckConstraint("quantity > 0", name="quantity_positive"),
         CheckConstraint(f"billing_interval_snapshot IN ({_sql_in(BILLING_INTERVALS)})", name="billing_interval_snapshot"),
+        CheckConstraint(
+            "billable_units_snapshot >= 0 AND included_units_snapshot >= 0 "
+            "AND per_unit_amount_snapshot >= 0",
+            name="snapshot_non_negative",
+        ),
         CheckConstraint("unit_amount_snapshot >= 0", name="unit_amount"),
         CheckConstraint("total_amount_snapshot >= 0", name="total_amount"),
     )
@@ -133,6 +138,9 @@ class BusinessSubscriptionItem(Base, UUIDMixin, TimestampMixin):
     item_name_snapshot: Mapped[str] = mapped_column(String(160), nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     billing_interval_snapshot: Mapped[str] = mapped_column(String(16), nullable=False, default="monthly", server_default="monthly")
+    billable_units_snapshot: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    included_units_snapshot: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    per_unit_amount_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0"))
     unit_amount_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     total_amount_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     features_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
@@ -213,6 +221,9 @@ class SubscriptionInvoiceLine(Base, UUIDMixin, TimestampMixin):
     item_name_snapshot: Mapped[str] = mapped_column(String(160), nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     billing_interval_snapshot: Mapped[str] = mapped_column(String(16), nullable=False)
+    billable_units_snapshot: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    included_units_snapshot: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    per_unit_amount_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0"))
     unit_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     total_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     features_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
