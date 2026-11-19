@@ -58,6 +58,19 @@ export default function SubscriptionPage() {
     finally { setBusy(false); }
   }
 
+  async function cancelSubscription() {
+    const sub = current?.subscription;
+    if (!sub?.id || busy) return;
+    if (!window.confirm(sub.status === "draft" ? "Cancel this unpaid plan selection and void its open Rental OS invoice?" : "Schedule this subscription to end at the end of the current paid period?")) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const result = await api(\`/subscriptions/\${sub.id}/cancel\`, "POST");
+      setNotice(result.notice || "Cancellation request saved.");
+      await refresh();
+    } catch (e: any) { setError(e.message || "Could not cancel subscription"); }
+    finally { setBusy(false); }
+  }
+
   async function choosePlan() {
     if (!packageCode) return;
     setBusy(true); setError(""); setNotice("");
@@ -82,6 +95,8 @@ export default function SubscriptionPage() {
           <div><p className="text-xs text-slate-500">Legacy account tier</p><p className="mt-1 font-medium">{current?.legacy_tier || "—"}</p></div>
           <div><p className="text-xs text-slate-500">Subscription status</p><p className="mt-1 font-medium">{current?.subscription?.status || "No active subscription"}</p></div>
           <div><p className="text-xs text-slate-500">Trial end</p><p className="mt-1 font-medium">{current?.legacy_trial_ends_at ? new Date(current.legacy_trial_ends_at).toLocaleDateString() : "—"}</p></div>
+          {current?.subscription?.cancel_at_period_end && <div><p className="text-xs text-amber-300">Cancellation scheduled</p><p className="mt-1 font-medium">{current.subscription.current_period_end ? new Date(current.subscription.current_period_end).toLocaleDateString() : "—"}</p></div>}
+          {current?.subscription?.id && !["cancelled", "expired"].includes(current.subscription.status) && <div className="ml-auto"><button disabled={busy || current.subscription.cancel_at_period_end} onClick={cancelSubscription} className="rounded-lg border border-rose-400/30 px-3 py-2 text-xs text-rose-300 disabled:opacity-40">{current.subscription.cancel_at_period_end ? "Cancellation scheduled" : "Cancel subscription"}</button></div>}
         </div>
       </section>
       <div className="grid gap-6 lg:grid-cols-2">
