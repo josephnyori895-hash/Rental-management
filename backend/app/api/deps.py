@@ -43,6 +43,9 @@ async def get_current_user(
         payload = decode_token(token)
     except Exception:
         raise _CREDENTIALS_ERROR
+    # Platform-admin tokens are a separate principal and must never authenticate as a landlord user.
+    if payload.get("type") != "access":
+        raise _CREDENTIALS_ERROR
     user_id = payload.get("sub")
     if not user_id:
         raise _CREDENTIALS_ERROR
