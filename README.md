@@ -17,7 +17,7 @@ This working copy is the source of `josephnyori895-hash/Rental-management`.
 | Accounting | Chart of accounts, ledger, backfill of historical payments |
 | Reporting | Owner console, analytics, PDF statements, eTIMS payloads |
 | Documents | Uploads and per-tenant document vault |
-| Messaging | Africa's Talking SMS, WhatsApp, inbound message handling, webhook router |
+| Messaging | Africa's Talking SMS, WhatsApp, inbound message handling, webhook router, daily reminder sweep |
 | Portal | Tenant-facing self-service endpoints |
 | Social | Facebook/Instagram bot webhook |
 
@@ -148,10 +148,10 @@ provisions a single free web service.
 ```bash
 cd backend
 ./venv/bin/pip install -r requirements-dev.txt
-./venv/bin/python -m pytest          # 245 tests
+./venv/bin/python -m pytest          # 313 tests
 ```
 
-**210 of them run with no database at all.** They cover JWT issuance and
+**233 of them run with no database at all.** They cover JWT issuance and
 validation (including `alg: none`, tampering and expiry), password hashing, the
 M-PESA callback shared-secret check, rate limiter behaviour, configuration
 defaults and app wiring, plus areas that would otherwise only fail in
@@ -179,7 +179,7 @@ production:
 
 ### Database-backed tests (tenant isolation)
 
-The remaining **35 tests need PostgreSQL**, because tenant isolation cannot be
+The remaining **73 tests need PostgreSQL**, because tenant isolation cannot be
 verified any other way: it is enforced by a `business_id` filter written
 separately in every router, and a missing one returns another operator's data
 while every other test still passes.
@@ -193,8 +193,8 @@ rather than fail, so `pytest` still works on a machine without PostgreSQL.
 # one-time setup
 sudo -u postgres createdb -O rental rental_test
 cd backend && ./venv/bin/python -m pytest
-# 245 passed            (database reachable)
-# 210 passed, 35 skipped (database not reachable)
+# 313 passed            (database reachable)
+# 233 passed, 80 skipped (database not reachable)
 ```
 
 Each test runs inside a transaction that is always rolled back — routes commit
@@ -221,51 +221,38 @@ cd backend
 
 Concrete, verified gaps in this repository:
 
-1. **No CI** — nothing runs on push. Note that a CI run without a database
-   would silently skip the 29 database-backed tests, so the workflow needs a
-   PostgreSQL service container to be meaningful.
-2. **Dead duplicate account model** — `app/models/accounting.py` defines
-   `Account` (table `accounts`) *and* `SYSTEM_ACCOUNTS`, neither of which
-   anything reads: the live ledger is `app/accounting/models.py::ChartOfAccount`
-   (table `chart_of_accounts`). The `accounts` table exists in the live database
-   with **0 rows** and is created by no migration — it only appears when
-   something calls `Base.metadata.create_all`. `app/models/accounting.py` also
-   owns the `journal_entries` table, so it cannot simply be deleted; the
-   duplicate `Account` and `SYSTEM_ACCOUNTS` can.
-3. **`/payments/simulate` moves no money** — owner-only, but it has no
+1. **No CI** — nothing runs on push. Note that  a CI run without a database would silently skip the 80 database-backed tests, so
+  the workflow needs a PostgreSQL service container to be meaningful.
+2. **`/payments/simulate` moves no money** — owner-only, but it has no
    `APP_ENV` guard, so it is reachable in production.
-4. **Two desktop shells** — the Tauri app and `rental_desktop.py` overlap.
-5. **Oversized modules** — the backend notifications and reports
+3. **Two desktop shells** — the Tauri app and `rental_desktop.py` overlap.
+4. **Oversized modules** — the backend notifications and reports
    modules have been split: `notifications/inbound.py` → `inbound.py` +
    `inbound_tenant.py` + `inbound_user.py`; `reports/router.py` → `router.py` +
    `statement.py` + `books.py` + `exports.py`; `notifications/service.py` →
    `service.py` + `templates.py`. Remaining are frontend-only (`OwnerBoard.tsx` 692,
    `BuildingCanvas.tsx` 670, `BooksPage.tsx` 637) — the frontend cannot be
    typechecked until `npm ci` runs.
-6. **Python 3.13 is not supported** — passlib imports the stdlib `crypt` module,
+5. **Python 3.13 is not supported** — passlib imports the stdlib `crypt` module,
    which is removed in 3.13. Stay on 3.12 (see the `bcrypt` pin in
    `requirements.txt`).
-7. **In-process rate limiting** — `core/ratelimit.py` keys on
+6. **In-process rate limiting** — `core/ratelimit.py` keys on
    `X-Forwarded-For`, which a client can spoof to get a fresh quota. Fine behind
    a proxy that overwrites the header; not fine if exposed directly.
-8. **Model/migration drift on `created_at`** — `TimestampMixin.created_at` is
+7. **Model/migration drift on `created_at`** — `TimestampMixin.created_at` is
    declared `index=True`, but no migration in `migrations/versions/` ever
    created those indexes, so the models and the live database disagree. Adding
    the model/migration comparison test made this visible; it is pinned, not yet
    fixed.
-9. **Utility tariffs have no effective dating** — editing a rate changes future
+8. **Utility tariffs have no effective dating** — editing a rate changes future
    readings only in the sense that nothing re-prices: readings already raised
    keep their original rate. Add effective-dated tariffs before rates change
    often in production.
-10. **Deposit refunds cannot be recorded** — a deposit invoice now posts
+9. **Deposit refunds cannot be recorded** — a deposit invoice now posts
     correctly (Dr 1100 / Cr 2100), and payments clear it via receivables, but
     `DepositRefund` is only ever *read*, so the refund leg (Dr 2100 / Cr 1000)
     has nothing to hang off. A test fails the moment one is created, forcing the
     posting to land with it.
-11. **Rent invoices are raised once, at enrollment** — `enroll_tenant` creates
-    the first rent invoice and any deposit invoice, and both now post. There is
-    no recurring monthly rent-invoice generator, so a tenancy does not accrue
-    further invoices on its own.
 
 ## Roadmap
 

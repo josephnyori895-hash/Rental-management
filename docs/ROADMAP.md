@@ -69,9 +69,9 @@ Nothing here is glamorous; all of it is debt that will slow every later phase.
 - [x] `POST /billing/bills` deprecated in favour of `POST /billing/utilities/readings`
       (OpenAPI `deprecated`, `Deprecation` + `Link: rel="successor-version"` headers, behaviour
       unchanged); `/billing/invoices` now returns a real `total` instead of the page size
-- [ ] Dead duplicate account model — `app/models/accounting.py::Account` (table `accounts`, 0 rows
-      in the live database, created by no migration) and its unused `SYSTEM_ACCOUNTS`. The live
-      ledger is `app/accounting/models.py::ChartOfAccount`.
+- [x] Dead duplicate account model removed — `app/models/accounting.py::Account` (table `accounts`,
+      0 rows in the live database, created by no migration) and its unused `SYSTEM_ACCOUNTS` are
+      gone. The live ledger is `app/accounting/models.py::ChartOfAccount`, as it always was.
 - [x] **Ledger posting audit** — the utility defect was one instance of a pattern, so all three
       posting hooks were audited for the same failure (an unresolvable account returning without a
       sound, inside a caller that swallows the exception). Fixed in `auto_post_payment` and
@@ -116,10 +116,17 @@ Nothing here is glamorous; all of it is debt that will slow every later phase.
       `2100` — inside a logged best-effort guard. `tests/test_enrollment_ledger.py` drives the real
       `POST /tenants/enroll` endpoint rather than inserting invoices, because the defect was in the
       endpoint's posting: inserting an invoice would have passed with the bug present.
-- [ ] **There is no recurring rent-invoice generator.** Rent is invoiced once at enrollment and never
-      again, so arrears, the aged-receivables buckets and the rent roll all only ever see each
-      tenancy's first month. The reports are correct about the data they have; the data is the gap.
-      This is the highest-value missing piece for daily use.
+- [x] **Recurring rent invoices.** `app/billing/rent_run.py` raises one rent invoice per active
+      lease for a calendar month (`POST /billing/rent-run`, `scripts/run_rent.py`) and posts each
+      Dr 1100 / Cr 4000, so arrears, the aged-receivables buckets and the rent roll stop being
+      month-one snapshots. Idempotent by period **overlap**, because enrollment bills
+      `start_date .. +30d`, a window that rarely matches a calendar month — the guard against
+      double-billing is a duplicated invoice, i.e. arrears a tenant would be asked to pay.
+      Leases that ended before the month began, or are no longer active, are skipped, and a
+      `dry_run` reports without writing. Pinned by `tests/test_rent_run.py`.
+- [ ] **Nothing schedules the rent run.** It is safe to re-run, but until a cron entry or a
+      Render scheduled job calls `scripts/run_rent.py`, rent still accrues only when someone runs
+      it.
 - [ ] CI workflow (lint + tests on push) — must run a PostgreSQL service container, or the 26
       isolation tests silently skip and the workflow proves less than it appears to
 

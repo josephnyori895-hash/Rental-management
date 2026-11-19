@@ -37,6 +37,7 @@ free plan does not expire.
 | Ephemeral filesystem | Uploaded documents are **lost on every redeploy** | Move to object storage before storing real documents. |
 | Free DB connection caps | The app's default pool (30 + 5) is too big | The blueprint sets `DATABASE_POOL_SIZE=5`, `DATABASE_MAX_OVERFLOW=5`. |
 | Render cron jobs | Pricing/availability needs checking against current plans — verify before relying on it | The monthly rent run should be a scheduled job; see "Not yet done". |
+| In-process reminder sweep | Runs only while the service is awake, and a free instance spins down after ~15 min idle | Point an external cron at `POST /api/v1/notifications/process-reminders` and set `REMINDERS_ENABLED=false`, or upgrade the instance. |
 
 ---
 
@@ -143,9 +144,10 @@ miss:
 
 ## Not yet done
 
-- **No monthly rent-run job.** Rent is invoiced once at enrollment, so the
-  books only ever contain each tenancy's first month. This is the highest-value
-  missing piece and it is what the scheduled job would run.
+- **No scheduled rent run.** `backend/scripts/run_rent.py` raises the month's
+  rent invoices and is idempotent, so it is safe to retry, but nothing calls
+  it: add a cron entry (or a Render scheduled job) for the 1st of the month.
+  Until then rent is only invoiced when someone runs it by hand.
 - **No automated backups.** `pg_dump` on a schedule, before any real tenancy
   exists in it.
 - **No CI.** Nothing runs on push. A CI run without a database would silently
