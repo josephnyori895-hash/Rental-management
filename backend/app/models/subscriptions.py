@@ -54,7 +54,7 @@ class SubscriptionPriceVersion(Base, UUIDMixin, TimestampMixin):
         nullable=False, index=True,
     )
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="KES")
-    billing_interval: Mapped[str] = mapped_column(String(16), nullable=False, default="monthly")
+    billing_interval: Mapped[str] = mapped_column(String(16), nullable=False, default="monthly", server_default="monthly")
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     included_units: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     per_unit_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0"))
