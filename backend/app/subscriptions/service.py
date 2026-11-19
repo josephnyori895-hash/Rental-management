@@ -1,6 +1,7 @@
 """Pricing and entitlement rules for Rental OS platform subscriptions."""
 from __future__ import annotations
 
+from calendar import monthrange
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -11,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.property import Unit
 from app.models.subscriptions import (
     BusinessSubscription, BusinessSubscriptionItem, SubscriptionCatalogItem,
-    SubscriptionPriceVersion,
+    SubscriptionPriceVersion, SubscriptionInvoice, SubscriptionPayment,
+    BusinessSubscriptionEvent,
 )
 
 CENT = Decimal("0.01")
@@ -82,3 +84,117 @@ async def get_entitlements(session: AsyncSession, business_id) -> dict:
             else:
                 merged[key] = value
     return merged
+
+
+
+def _add_months(value: datetime, months: int) -> datetime:
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day)
+
+
+async def apply_verified_platform_subscription_payment(
+    session: AsyncSession,
+    *,
+    invoice_id,
+    provider: str,
+    provider_reference: str,
+    amount: Decimal,
+    currency: str,
+    provider_event_verified: bool,
+) -> dict:
+    """Apply a verified Rental OS platform-payment event exactly once.
+
+    This function is intentionally not an HTTP endpoint. Only a future
+    provider-specific webhook adapter may call it after cryptographic
+    verification using Rental OS's own provider credentials. Never pass
+    landlord payment credentials or landlord rent invoice identifiers here.
+    """
+    if provider_event_verified is not True:
+        raise HTTPException(status_code=401, detail="Unverified platform payment event")
+    if not provider or len(provider) > 40 or not provider_reference or len(provider_reference) > 160:
+        raise HTTPException(status_code=422, detail="Invalid payment provider reference")
+    try:
+        paid_amount = Decimal(str(amount))
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid payment amount")
+    if not paid_amount.is_finite() or paid_amount <= 0:
+        raise HTTPException(status_code=422, detail="Payment amount must be positive and finite")
+    if not isinstance(currency, str) or len(currency) != 3 or currency != currency.upper():
+        raise HTTPException(status_code=422, detail="Invalid payment currency")
+
+    duplicate = await session.scalar(
+        select(SubscriptionPayment).where(
+            SubscriptionPayment.provider == provider,
+            SubscriptionPayment.provider_reference == provider_reference,
+        ).with_for_update()
+    )
+    if duplicate:
+        if (duplicate.invoice_id != invoice_id or duplicate.amount != paid_amount
+                or duplicate.currency != currency or duplicate.status != "succeeded"):
+            raise HTTPException(status_code=409, detail="Payment reference was already used for a different payment")
+        return {"payment_id": str(duplicate.id), "status": "succeeded", "idempotent": True}
+
+    invoice = await session.scalar(
+        select(SubscriptionInvoice).where(
+            SubscriptionInvoice.id == invoice_id,
+        ).with_for_update()
+    )
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Platform subscription invoice not found")
+    if invoice.status != "open":
+        raise HTTPException(status_code=409, detail="Subscription invoice is not payable")
+    if paid_amount != Decimal(invoice.total):
+        raise HTTPException(status_code=409, detail="Payment amount does not match the platform invoice")
+    if currency != invoice.currency:
+        raise HTTPException(status_code=409, detail="Payment currency does not match the platform invoice")
+
+    subscription = await session.scalar(
+        select(BusinessSubscription).where(
+            BusinessSubscription.id == invoice.subscription_id,
+            BusinessSubscription.business_id == invoice.business_id,
+        ).with_for_update()
+    )
+    if not subscription or subscription.status != "draft":
+        raise HTTPException(status_code=409, detail="Subscription is not awaiting initial activation")
+
+    now = datetime.now(timezone.utc)
+    payment = SubscriptionPayment(
+        business_id=invoice.business_id,
+        invoice_id=invoice.id,
+        provider=provider,
+        provider_reference=provider_reference,
+        amount=paid_amount,
+        currency=currency,
+        status="succeeded",
+        received_at=now,
+    )
+    session.add(payment)
+    invoice.status = "paid"
+    invoice.paid_at = now
+    subscription.status = "active"
+    subscription.starts_at = now
+    subscription.current_period_start = now
+    if subscription.billing_interval == "monthly":
+        subscription.current_period_end = _add_months(now, 1)
+    elif subscription.billing_interval == "quarterly":
+        subscription.current_period_end = _add_months(now, 3)
+    elif subscription.billing_interval == "annual":
+        subscription.current_period_end = _add_months(now, 12)
+    else:
+        raise HTTPException(status_code=409, detail="Unsupported subscription billing interval")
+
+    session.add(BusinessSubscriptionEvent(
+        business_id=invoice.business_id,
+        subscription_id=subscription.id,
+        event_type="subscription.activated",
+        event_metadata={
+            "invoice_id": str(invoice.id), "payment_id": str(payment.id),
+            "provider": provider, "provider_reference": provider_reference,
+            "currency": currency, "amount": str(paid_amount),
+        },
+    ))
+    await session.flush()
+    return {"payment_id": str(payment.id), "status": "succeeded", "idempotent": False}
