@@ -198,13 +198,50 @@ async def select_subscription(
     data: SelectionRequest,
     session: SessionDep,
     business: Business = Depends(get_current_business),
+    owner: OwnerDep = None,
 ):
     now, units, currency, total, lines, interval = await _price_selection(session, data, business)
+    # Serialize selections per business and prevent multiple live subscriptions.
+    await session.scalar(select(Business).where(Business.id == business.id).with_for_update())
+    live = await session.scalar(
+        select(BusinessSubscription.id).where(
+            BusinessSubscription.business_id == business.id,
+            BusinessSubscription.status.in_(("active", "trialing", "past_due")),
+        ).with_for_update()
+    )
+    if live:
+        raise HTTPException(status_code=409, detail="An active subscription already exists; use the change-plan workflow")
+    drafts = (await session.scalars(
+        select(BusinessSubscription).where(
+            BusinessSubscription.business_id == business.id,
+            BusinessSubscription.status == "draft",
+        ).with_for_update()
+    )).all()
+    for previous in drafts:
+        open_invoice = await session.scalar(
+            select(SubscriptionInvoice.id).where(
+                SubscriptionInvoice.subscription_id == previous.id,
+                SubscriptionInvoice.status.in_(("draft", "open")),
+            ).limit(1)
+        )
+        if open_invoice:
+            raise HTTPException(status_code=409, detail="An unpaid subscription invoice already exists")
+        previous.status = "cancelled"
+        session.add(BusinessSubscriptionEvent(
+            business_id=business.id, subscription_id=previous.id,
+            event_type="selection.replaced", actor_user_id=owner.id,
+            event_metadata={"reason": "new_selection"},
+        ))
     sub = BusinessSubscription(
         business_id=business.id, status="draft", currency=currency, billing_interval=interval,
     )
     session.add(sub)
     await session.flush()
+    session.add(BusinessSubscriptionEvent(
+        business_id=business.id, subscription_id=sub.id,
+        event_type="selection.created", actor_user_id=owner.id,
+        event_metadata={"currency": currency, "billing_interval": interval, "total": str(total)},
+    ))
     for item, price, amount in lines:
         session.add(BusinessSubscriptionItem(
             subscription_id=sub.id, catalog_item_id=item.id, price_version_id=price.id,
