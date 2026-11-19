@@ -87,6 +87,11 @@ class BusinessSubscription(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "business_subscriptions"
     __table_args__ = (
         Index("ix_business_subscription_status", "business_id", "status"),
+        Index(
+            "uq_business_subscriptions_one_live_per_business",
+            "business_id", unique=True,
+            postgresql_where=text("status IN ('active', 'trialing', 'past_due')"),
+        ),
         CheckConstraint(f"status IN ({_sql_in(SUBSCRIPTION_STATUSES)})", name="status"),
         CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
         CheckConstraint(f"billing_interval IN ({_sql_in(RECURRING_INTERVALS)})", name="billing_interval"),
