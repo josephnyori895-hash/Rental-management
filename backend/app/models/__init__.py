@@ -1,4 +1,4 @@
-from app.models.accounting import Account, JournalEntry, AccountType, SYSTEM_ACCOUNTS
+from app.models.accounting import AccountType, JournalEntry
 from app.models.base import AuditLog, UUIDMixin, TimestampMixin, SoftDeleteMixin
 from app.models.billing import Invoice, Payment, DepositRefund, InvoiceType, InvoiceStatus, PaymentMethod
 from app.models.business import Business, User, UserRole, SubscriptionTier

@@ -15,15 +15,49 @@ import uuid
 from decimal import Decimal
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.accounting.service import auto_post_payment
 from app.core.config import settings
 from app.models.billing import Invoice, InvoiceStatus, Payment, PaymentMethod
-from app.models.property import Unit
+from app.models.lease import Lease, LeaseStatus
+from app.models.property import Unit, UnitStatus
 
 logger = logging.getLogger(__name__)
+
+
+async def _activate_lease_if_settled(session: AsyncSession, lease_id) -> bool:
+    """Turn a reserved, pending lease into an active tenancy once it is paid.
+
+    WhatsApp enrollment reserves the unit and raises deposit/first-rent
+    invoices against a pending lease. Nothing used to flip that lease to
+    active, so a tenant who paid in full stayed pending forever and the unit
+    never showed as occupied. Driving activation from the invoice makes it
+    work identically for STK, the M-Pesa callback, cash recording and the
+    simulator.
+    """
+    lease = await session.get(Lease, lease_id)
+    if lease is None or lease.status != LeaseStatus.PENDING.value:
+        return False
+
+    unpaid = await session.scalar(
+        select(func.count(Invoice.id)).where(
+            Invoice.lease_id == lease.id,
+            Invoice.balance > 0,
+            Invoice.status.in_(["pending", "partial", "overdue"]),
+        )
+    )
+    if unpaid:
+        return False
+
+    lease.status = LeaseStatus.ACTIVE.value
+    unit = await session.get(Unit, lease.unit_id)
+    if unit is not None:
+        unit.status = UnitStatus.OCCUPIED.value
+        unit.current_lease_id = lease.id
+    await session.commit()
+    return True
 
 
 async def apply_payment(
@@ -69,6 +103,16 @@ async def apply_payment(
             "Ledger posting failed for payment %s (invoice %s)",
             pay.id, inv.id, exc_info=True,
         )
+
+    # A move-in deposit and first rent may arrive as two separate payments;
+    # the lease only activates once nothing is left outstanding.
+    if inv.lease_id:
+        try:
+            await _activate_lease_if_settled(session, inv.lease_id)
+        except Exception:
+            logger.warning(
+                "Lease activation failed for invoice %s", inv.id, exc_info=True
+            )
 
     # Send SMS receipt (best-effort, don't block payment)
     try:

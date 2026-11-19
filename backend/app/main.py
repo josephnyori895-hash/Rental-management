@@ -4,6 +4,7 @@ Rental OS — Application Entry Point
 
 from __future__ import annotations
 
+import asyncio
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -44,7 +45,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     print(f"  {settings.APP_NAME} v{settings.APP_VERSION}")
     print(f"  Environment: {settings.ENVIRONMENT}")
     print(f"  Database: {str(settings.DATABASE_URL).split('@')[1]}")
+
+    # Recurring jobs, in-process: the free deployment target has no scheduler
+    # add-on. Both are idempotent — reminders per tenant per day, rent per
+    # lease per period — so a restart cannot double-send or double-bill.
+    # See app/core/scheduler.py.
+    from app.core.scheduler import start_scheduler
+
+    scheduler_tasks = start_scheduler()
+
     yield
+
+    for task in scheduler_tasks:
+        task.cancel()
+    for task in scheduler_tasks:
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
     from app.core.database import close_db
 
     await close_db()

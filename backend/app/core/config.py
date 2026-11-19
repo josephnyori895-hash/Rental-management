@@ -104,6 +104,21 @@ class Settings(BaseSettings):
     AT_WHATSAPP_NUMBER: str = ""  # Your WhatsApp Business number linked to AT
     AT_WEBHOOK_BASE_URL: str = ""  # Public URL for AT to call back (e.g. https://yourdomain.com)
 
+    # ── Scheduled jobs ───────────────────────────────────────────
+    # The daily rent-reminder sweep runs in-process (app/core/scheduler.py),
+    # because the free deployment target has no cron. Disable this when an
+    # external cron calls POST /notifications/process-reminders instead, so
+    # tenants are not reminded twice. 05:00 UTC = 08:00 EAT.
+    REMINDERS_ENABLED: bool = True
+    REMINDER_HOUR_UTC: int = 5
+
+    # The monthly rent run also runs in-process, on the 1st at 06:00 UTC (09:00
+    # EAT), and once at startup as catch-up. It is idempotent by period overlap,
+    # so a restart on the 1st cannot double-bill. Disable this when an external
+    # cron calls POST /billing/rent-run instead.
+    RENT_RUN_ENABLED: bool = True
+    RENT_RUN_HOUR_UTC: int = 6
+
     # ── Facebook / Instagram Bot ───────────────────────────────────
     FB_APP_ID: str = ""
     FB_APP_SECRET: str = ""
@@ -124,6 +139,25 @@ class Settings(BaseSettings):
     # Production default callback secret. Required in production; used as the
     # fallback for business payment gateways that don't set their own.
     MPESA_CALLBACK_SECRET: str = ""
+    # Paybill (C2B) validation/confirmation URLs registered with Daraja. The
+    # secret is appended as `?token=` to those URLs.
+    MPESA_C2B_SECRET: str = ""
+
+    # ── Airtel Money ─────────────────────────────────────────────
+    AIRTEL_CLIENT_ID: str = ""
+    AIRTEL_CLIENT_SECRET: str = ""
+    AIRTEL_BASE_URL: str = "https://openapiuat.airtel.africa"
+    AIRTEL_COUNTRY: str = "KE"
+    AIRTEL_CURRENCY: str = "KES"
+    AIRTEL_CALLBACK_SECRET: str = ""  # appended to the callback URL as ?token=
+
+    # ── Flutterwave (cards, bank transfer, mobile money) ────────
+    FLUTTERWAVE_SECRET_KEY: str = ""
+    FLUTTERWAVE_PUBLIC_KEY: str = ""
+    FLUTTERWAVE_SECRET_HASH: str = ""  # dashboard webhook "verif-hash"
+    FLUTTERWAVE_CURRENCY: str = "KES"
+    FLUTTERWAVE_BASE_URL: str = "https://api.flutterwave.com/v3"
+    FLUTTERWAVE_REDIRECT_URL: str = ""
 
     # Legacy DARAJA_* support (mapped via aliases)
     @property
@@ -163,7 +197,6 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
-        """Fail closed if production is configured with development secrets."""
         if self.APP_ENV.strip().lower() != "production":
             return self
 

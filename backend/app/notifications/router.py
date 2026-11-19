@@ -8,6 +8,7 @@ provider configuration.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -22,6 +23,11 @@ from app.notifications.service import (
 )
 from app.models.tenant import Tenant
 from app.models.business import User
+from app.payments.availability import (
+    RAIL_LABELS,
+    RAIL_REQUIREMENTS,
+    available_methods,
+)
 from sqlalchemy import select, func
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -107,7 +113,8 @@ class BusinessConfigRequest(BaseModel):
     mpesa_paybill: str | None = None
     county: str | None = None
     rent_due_day: int = 5
-    payment_method: str = "mpesa"  # mpesa | bank
+    payment_method: Literal["mpesa", "bank", "airtel", "card"] = "mpesa"
+    payment_methods: list[Literal["mpesa", "bank", "airtel", "card"]] | None = None
     bank_name: str | None = None
     bank_account: str | None = None
     bank_account_name: str | None = None
@@ -122,10 +129,11 @@ async def get_business_config(
     return {
         "business_name": cfg.get("business_name", business.name),
         "kra_pin": cfg.get("kra_pin", "P051234567K"),
-        "mpesa_paybill": cfg.get("mpesa_paybill", business.mpesa_shortcode or "400200"),
+        "mpesa_paybill": cfg.get("mpesa_paybill", business.mpesa_shortcode or ""),
         "county": cfg.get("county", "Nairobi"),
         "rent_due_day": cfg.get("rent_due_day", 5),
         "payment_method": cfg.get("payment_method", "mpesa"),
+        "payment_methods": cfg.get("payment_methods") or [cfg.get("payment_method", "mpesa")],
         "bank_name": cfg.get("bank_name", "Equity Bank"),
         "bank_account": cfg.get("bank_account", "1220123456789"),
         "bank_account_name": cfg.get("bank_account_name", business.name),
@@ -139,13 +147,43 @@ async def update_business_config(
     business: Business = Depends(get_current_business),
 ):
     """Update general business details and payment options."""
+    payload = data.model_dump()
+    # Keep the legacy single-choice field aligned with the multi-rail list so
+    # older code paths (and older clients) still pick a sensible rail.
+    if payload.get("payment_methods"):
+        payload["payment_method"] = payload["payment_methods"][0]
+    elif payload.get("payment_methods") == []:
+        raise HTTPException(
+            status_code=400, detail="Select at least one payment method."
+        )
+
+    # Refuse to save a rail this deployment cannot process: the tenant would
+    # be offered a payment option that dead-ends at the provider call.
+    selected = payload.get("payment_methods") or [payload.get("payment_method", "mpesa")]
+    paybill = (payload.get("mpesa_paybill") or "").strip()
+    configured = available_methods(business, paybill=paybill)
+    missing = [m for m in selected if m not in configured]
+    if missing:
+        detail = "; ".join(
+            f"{RAIL_LABELS.get(m, m)} — {RAIL_REQUIREMENTS.get(m, 'not configured')}"
+            for m in missing
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Payment method not configured: {detail}.",
+        )
+
+    # The Paybill typed in Settings is what tenants are told to pay into.
+    if paybill:
+        business.mpesa_shortcode = paybill
+
     settings_json = dict(business.settings or {})
-    settings_json["business"] = data.model_dump()
+    settings_json["business"] = payload
     business.name = data.business_name
     business.settings = settings_json
     session.add(business)
     await session.commit()
-    return {"status": "ok", "business": data.model_dump()}
+    return {"status": "ok", "business": payload}
 
 
 @router.post("/send")

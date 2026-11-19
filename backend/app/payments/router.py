@@ -23,7 +23,7 @@ from app.models.billing import Invoice, InvoiceStatus, Payment
 from app.models.business import Business, User
 from app.models.tenant import Tenant
 from app.models.property import Unit
-from app.payments import service
+from app.payments import airtel, c2b, flutterwave, service
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
@@ -383,3 +383,124 @@ async def mpesa_callback(payload: dict, request: Request, session: SessionDep):
         # Always acknowledge Safaricom so it stops retrying.
         pass
     return {"ResultCode": 0, "ResultDesc": "Accepted"}
+
+
+# ── M-Pesa Paybill (C2B) ─────────────────────────────────────────
+
+def _verify_c2b_token(request: Request) -> None:
+    """C2B endpoints are unauthenticated; the registered URL carries the secret.
+
+    Register with Daraja as:
+        https://<host>/api/v1/payments/mpesa/c2b/confirmation?token=<secret>
+    """
+    expected = settings.MPESA_C2B_SECRET
+    if not expected or expected.startswith("change-"):
+        logger.warning(
+            "MPESA_C2B_SECRET is unset — Paybill callback verification is "
+            "DISABLED; forged confirmations can mark invoices paid."
+        )
+        return
+    supplied = request.query_params.get("token", "")
+    if not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=403, detail="Invalid C2B token")
+
+
+@callback_router.post(
+    "/mpesa/c2b/validation", dependencies=[Depends(callback_limiter)]
+)
+async def mpesa_c2b_validation(payload: dict, request: Request, session: SessionDep):
+    """Daraja validation. Always accept: rejecting here fails the tenant's payment."""
+    _verify_c2b_token(request)
+    return {"ResultCode": "0", "ResultDesc": "Accepted"}
+
+
+@callback_router.post(
+    "/mpesa/c2b/confirmation", dependencies=[Depends(callback_limiter)]
+)
+async def mpesa_c2b_confirmation(payload: dict, request: Request, session: SessionDep):
+    _verify_c2b_token(request)
+    try:
+        await c2b.record_c2b_payment(session, payload)
+    except Exception:
+        # Acknowledge regardless so Safaricom stops retrying, but never silently.
+        logger.warning(
+            "C2B confirmation failed for %s", payload.get("TransID"), exc_info=True
+        )
+    return {"ResultCode": "0", "ResultDesc": "Accepted"}
+
+
+# ── Airtel Money ────────────────────────────────────────────────
+
+class AirtelRequest(BaseModel):
+    invoice_id: str
+    phone: str
+
+
+@router.post("/airtel/stk", dependencies=[Depends(payment_limiter)])
+async def airtel_stk(
+    data: AirtelRequest,
+    session: SessionDep,
+    user: User = Depends(get_current_user),
+):
+    """Prompt an Airtel Money wallet to pay one invoice."""
+    try:
+        result = await airtel.collect(session, data.invoice_id, data.phone)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status": "AIRTEL_PROMPT_SENT", "provider_response": result}
+
+
+@callback_router.post("/airtel/callback", dependencies=[Depends(callback_limiter)])
+async def airtel_callback(payload: dict, request: Request, session: SessionDep):
+    expected = settings.AIRTEL_CALLBACK_SECRET
+    if expected and not hmac.compare_digest(
+        request.query_params.get("token", ""), expected
+    ):
+        raise HTTPException(status_code=403, detail="Invalid callback token")
+    try:
+        await airtel.handle_callback(session, payload)
+    except Exception:
+        logger.warning("Airtel callback failed", exc_info=True)
+    return {"status": "ok"}
+
+
+# ── Flutterwave (card / bank / mobile money) ─────────────────────
+
+class FlutterwaveCheckoutRequest(BaseModel):
+    invoice_id: str
+
+
+@router.post("/flutterwave/checkout", dependencies=[Depends(payment_limiter)])
+async def flutterwave_checkout(
+    data: FlutterwaveCheckoutRequest,
+    session: SessionDep,
+    user: User = Depends(get_current_user),
+):
+    """Create a hosted checkout link for one invoice."""
+    try:
+        return await flutterwave.create_checkout(session, data.invoice_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@callback_router.post(
+    "/flutterwave/webhook", dependencies=[Depends(callback_limiter)]
+)
+async def flutterwave_webhook(payload: dict, request: Request, session: SessionDep):
+    expected = settings.FLUTTERWAVE_SECRET_HASH
+    if not expected:
+        raise HTTPException(
+            status_code=503, detail="Flutterwave webhook is not configured"
+        )
+    supplied = request.headers.get("verif-hash", "")
+    if not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=403, detail="Invalid webhook signature")
+    try:
+        await flutterwave.handle_webhook(session, payload)
+    except Exception:
+        logger.warning("Flutterwave webhook failed", exc_info=True)
+    return {"status": "ok"}

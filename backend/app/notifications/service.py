@@ -27,11 +27,13 @@ from app.notifications.providers import (
     ConsoleWhatsAppProvider,
     NotificationProvider,
 )
+from app.notifications.recipients import property_recipient_phones
 from app.notifications.templates import (
     _build_lease_expiry_sms,
     _build_payment_receipt_sms,
     _build_rent_reminder_sms,
     _build_wa_balance,
+    _build_wa_caretaker_arrears,
     _build_wa_caretaker_move_in,
     _build_wa_caretaker_payment,
     _build_wa_caretaker_ticket,
@@ -191,6 +193,81 @@ async def process_due_reminders(session: AsyncSession, business_id: uuid.UUID) -
         log = await send_notification(session=session, business_id=business_id, tenant_id=tenant.id, channel=target_channel, recipient=target_phone, template_name="rent_reminder", body=body)
         if log.status == "sent":
             sent += 1
+
+    await process_caretaker_digests(session, business_id)
+    return sent
+
+
+async def process_caretaker_digests(session: AsyncSession, business_id: uuid.UUID) -> int:
+    """Send each caretaker one unpaid-rent digest, once a day.
+
+    The digest covers only the buildings assigned to that caretaker, and a
+    caretaker with several buildings gets a single message rather than one per
+    property. The once-a-day guard is per recipient, which is why it uses the
+    phone number rather than a property id: the same person may run both.
+    """
+    from datetime import date
+    from datetime import datetime as dt
+    from sqlalchemy import func as sa_func
+    from app.models.billing import Invoice
+    from app.models.property import Property, Unit
+
+    today = date.today()
+    today_start = dt.combine(today, dt.min.time()).replace(tzinfo=timezone.utc)
+
+    rows = (await session.execute(
+        select(Invoice, Property, Unit, Tenant)
+        .join(Property, Invoice.property_id == Property.id)
+        .join(Unit, Invoice.unit_id == Unit.id)
+        .join(Tenant, Invoice.tenant_id == Tenant.id)
+        .where(
+            Invoice.business_id == business_id,
+            Invoice.status.in_(["pending", "partial", "overdue"]),
+            Invoice.balance > 0,
+            Invoice.due_date <= today,
+            Property.is_deleted.is_(False),
+        )
+        .order_by(Property.name.asc(), Tenant.full_name.asc())
+    )).all()
+    if not rows:
+        return 0
+
+    by_property: dict[uuid.UUID, dict] = {}
+    for invoice, prop, unit, tenant in rows:
+        entry = by_property.setdefault(
+            prop.id,
+            {"property": prop.name, "unpaid": 0, "total": 0.0, "units": []},
+        )
+        entry["unpaid"] += 1
+        entry["total"] += float(invoice.balance)
+        entry["units"].append(
+            f"{unit.unit_number} {tenant.full_name}: KES {float(invoice.balance):,.0f}"
+        )
+
+    by_phone: dict[str, list[dict]] = {}
+    for prop_id, entry in by_property.items():
+        for phone in await property_recipient_phones(session, business_id, prop_id):
+            by_phone.setdefault(phone, []).append(entry)
+
+    sent = 0
+    for phone, sections in by_phone.items():
+        already_sent = await session.scalar(
+            select(sa_func.count(NotificationLog.id)).where(
+                NotificationLog.recipient == phone,
+                NotificationLog.template_name == "caretaker_arrears",
+                NotificationLog.created_at >= today_start,
+                NotificationLog.status == "sent",
+            )
+        )
+        if already_sent and already_sent > 0:
+            continue
+
+        log = await send_wa_to_caretaker(
+            session, business_id, phone,
+            _build_wa_caretaker_arrears(sections), "caretaker_arrears",
+        )
+        if log.status == "sent":
+            sent += 1
     return sent
 
 
@@ -226,10 +303,23 @@ async def send_wa_enrollment_prompt(
 async def send_wa_balance(
     session: AsyncSession, business_id: uuid.UUID, tenant: Tenant,
     balance: float, due_date: str | None = None,
+    payment_info: dict | None = None,
 ) -> NotificationLog | None:
     phone = tenant.whatsapp_phone
     if not phone:
         return None
+    if payment_info is None:
+        from app.models.business import Business
+        from app.payments.availability import enabled_methods
+
+        business = await session.get(Business, business_id)
+        cfg = (business.settings or {}).get("business", {}) if business else {}
+        payment_info = {
+            "methods": enabled_methods(business),
+            "bank_name": cfg.get("bank_name"),
+            "bank_account": cfg.get("bank_account"),
+            "bank_account_name": cfg.get("bank_account_name"),
+        }
     unit = "—"
     # Try to find active lease for unit number
     from app.models.lease import Lease as LeaseModel
@@ -239,7 +329,7 @@ async def send_wa_balance(
         u = await session.get(Unit, lease.unit_id)
         if u:
             unit = u.unit_number
-    body = _build_wa_balance(tenant.full_name, unit, balance, due_date)
+    body = _build_wa_balance(tenant.full_name, unit, balance, due_date, payment_info)
     return await send_notification(session=session, business_id=business_id, tenant_id=tenant.id, channel="whatsapp", recipient=phone, template_name="wa_balance", body=body)
 
 
@@ -258,6 +348,26 @@ async def send_wa_payment_receipt(
         return await send_payment_receipt_sms(session, payment, tenant, unit_number, invoice_status)
     body = _build_wa_payment_receipt(tenant.full_name, unit_number or "—", float(payment.amount), payment.reference, invoice_status)
     return await send_notification(session=session, business_id=payment.business_id, tenant_id=tenant.id, channel="whatsapp", recipient=phone, template_name="wa_payment_receipt", body=body)
+
+
+async def send_payment_receipt(
+    session: AsyncSession, payment: Payment,
+    tenant: Tenant | None = None, unit_number: str | None = None,
+    invoice_status: str | None = None,
+) -> NotificationLog | None:
+    """Send a receipt over the best channel the tenant has.
+
+    WhatsApp when `whatsapp_phone` is on file, SMS otherwise.
+
+    This function is what `app.payments.service.apply_payment` calls, and it
+    did not exist: the import raised `ImportError` inside a best-effort
+    `try/except`, so the payment succeeded, the ledger posted, and no receipt
+    was ever sent — failure that looked exactly like the feature working.
+    """
+    return await send_wa_payment_receipt(
+        session, payment, tenant=tenant,
+        unit_number=unit_number, invoice_status=invoice_status,
+    )
 
 
 async def send_wa_maintenance_update(
@@ -296,7 +406,11 @@ async def send_wa_help(
     phone = tenant.whatsapp_phone
     if not phone:
         return None
-    body = _build_wa_help()
+    from app.models.business import Business
+    from app.payments.availability import enabled_methods
+
+    business = await session.get(Business, business_id)
+    body = _build_wa_help(set(enabled_methods(business)))
     return await send_notification(session=session, business_id=business_id, tenant_id=tenant.id, channel="whatsapp", recipient=phone, template_name="wa_help", body=body)
 
 

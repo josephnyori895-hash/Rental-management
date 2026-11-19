@@ -4,7 +4,7 @@ RENTAL OS — Auth Router
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -98,3 +98,19 @@ async def create_staff(
     staff = await service.create_staff(session, actor.business_id, data, actor)
     await session.commit()
     return staff
+
+
+@router.get("/staff", response_model=list[UserOut])
+async def list_staff(
+    session: SessionDep,
+    actor: User = Depends(require_roles("owner", "manager")),
+    role: str | None = Query(None, pattern="^(owner|manager|agent)$"),
+):
+    """List staff, so a property can be assigned to a specific caretaker."""
+    q = select(User).where(
+        User.business_id == actor.business_id,
+        User.is_active.is_(True),
+    )
+    if role:
+        q = q.where(User.role == role)
+    return (await session.scalars(q.order_by(User.full_name))).all()

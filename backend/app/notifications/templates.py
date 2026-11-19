@@ -94,7 +94,10 @@ def _build_wa_welcome_enrollment(
     lines.append(f"  ─────────────────")
     lines.append(f"  Total: KES {total:,.0f}")
     lines.append(f"")
-    if bank_info and bank_info.get("payment_method") == "bank":
+    pay_methods = (bank_info or {}).get("payment_methods") or [
+        (bank_info or {}).get("payment_method", "mpesa")
+    ]
+    if pay_methods == ["bank"]:
         lines.append(f"Please deposit/transfer payment to:")
         lines.append(f"  Bank: {bank_info.get('bank_name', 'Equity Bank')}")
         lines.append(f"  Account: {bank_info.get('bank_account', '—')}")
@@ -102,7 +105,21 @@ def _build_wa_welcome_enrollment(
         lines.append(f"")
         lines.append(f"Reply DONE <reference> once paid.")
     else:
-        lines.append(f"Reply PAY to pay now via M-Pesa")
+        labels = {
+            "mpesa": "M-Pesa",
+            "airtel": "Airtel Money",
+            "card": "card or online bank transfer",
+            "bank": "bank transfer",
+        }
+        if len(pay_methods) > 1:
+            lines.append(
+                "Reply PAY to choose how to pay: "
+                + ", ".join(labels.get(m, m) for m in pay_methods)
+            )
+        else:
+            lines.append(
+                f"Reply PAY to pay now via {labels.get(pay_methods[0], 'M-Pesa')}"
+            )
         lines.append(f"Reply LATER to pay within 24h")
     return "\n".join(lines)
 
@@ -167,19 +184,49 @@ def _build_wa_lease_expiry(tenant_name: str, unit_number: str, end_date: str, da
     )
 
 
-def _build_wa_balance(tenant_name: str, unit_number: str, balance: float, due_date: str | None) -> str:
-    msg = (
-        f"💰 Balance for {tenant_name}\n"
-        f"{unit_number}\n"
-        f"Outstanding: KES {balance:,.0f}\n"
-    )
+def _build_wa_balance(
+    tenant_name: str, unit_number: str, balance: float,
+    due_date: str | None, payment_info: dict | None = None,
+) -> str:
+    lines = [
+        f"💰 Balance for {tenant_name}",
+        unit_number,
+        f"Outstanding: KES {balance:,.0f}",
+    ]
     if due_date:
-        msg += f"Due: {due_date}\n"
-    if balance > 0:
-        msg += "Reply PAY to pay now"
+        lines.append(f"Due: {due_date}")
+
+    if balance <= 0:
+        lines.append("You're all clear! ✅")
+        return "\n".join(lines)
+
+    methods = (payment_info or {}).get("methods") or []
+    if methods:
+        labels = {
+            "mpesa": "M-Pesa",
+            "airtel": "Airtel Money",
+            "card": "Card / online bank",
+        }
+        lines.append("")
+        lines.append("Ways to pay:")
+        for method in methods:
+            if method == "bank":
+                continue
+            lines.append(f"  • {labels.get(method, method)} — reply PAY {method.upper()}")
+        if "bank" in methods:
+            info = payment_info or {}
+            lines.append("  • Bank transfer:")
+            lines.append(f"      Bank: {info.get('bank_name') or '—'}")
+            lines.append(f"      Account: {info.get('bank_account') or '—'}")
+            lines.append(
+                f"      Name: {info.get('bank_account_name') or tenant_name}"
+            )
+            lines.append("      Reply DONE <reference> once paid")
+        lines.append("")
+        lines.append("Reply PAY to pay now")
     else:
-        msg += "You're all clear! ✅"
-    return msg
+        lines.append("Reply PAY to pay now")
+    return "\n".join(lines)
 
 
 def _build_wa_utility_bill(
@@ -199,16 +246,28 @@ def _build_wa_utility_bill(
     return msg
 
 
-def _build_wa_help() -> str:
-    return (
-        "Reply with a keyword:\n"
-        "BALANCE — Check your balance\n"
-        "PAY — Pay rent via M-Pesa\n"
-        "RECEIPT — Get last receipt\n"
-        "REPORT — Report maintenance issue\n"
-        "RENEW — Request lease renewal\n"
-        "HELP — Show this menu"
-    )
+def _build_wa_help(methods: set[str] | None = None) -> str:
+    """Menu of what this property can actually accept.
+
+    Advertising an unconfigured rail only sends tenants into a dead end.
+    `None` keeps the full menu for callers that have no business context.
+    """
+    available = methods if methods is not None else {"mpesa", "airtel", "card", "bank"}
+    lines = ["Reply with a keyword:", "BALANCE — Check your balance"]
+    if "mpesa" in available:
+        lines.append("PAY — Pay rent via M-Pesa")
+    if "airtel" in available:
+        lines.append("AIRTEL — Pay via Airtel Money")
+    if "card" in available:
+        lines.append("CARD — Pay by card or bank transfer")
+    lines += [
+        "DONE <ref> — Confirm a bank transfer",
+        "RECEIPT — Get last receipt",
+        "REPORT — Report maintenance issue",
+        "RENEW — Request lease renewal",
+        "HELP — Show this menu",
+    ]
+    return "\n".join(lines)
 
 
 # ── Caretaker WhatsApp template builders ─────────────────────────
@@ -237,6 +296,25 @@ def _build_wa_caretaker_move_in(tenant_name: str, unit_number: str, date: str) -
         f"Date: {date}\n"
         f"Prepare unit for occupancy."
     )
+
+
+def _build_wa_caretaker_arrears(sections: list[dict]) -> str:
+    """One digest per caretaker, grouped by the properties they run."""
+    unpaid = sum(section["unpaid"] for section in sections)
+    lines = [f"⚠️ ARREARS — {unpaid} unpaid"]
+    for section in sections:
+        lines.append(
+            f"{section['property']}: {section['unpaid']} · "
+            f"KES {section['total']:,.0f}"
+        )
+
+    details = [line for section in sections for line in section["units"]]
+    if details:
+        lines.append("")
+        lines.extend(details[:8])
+        if len(details) > 8:
+            lines.append(f"…and {len(details) - 8} more on the dashboard.")
+    return "\n".join(lines)
 
 
 def _build_wa_caretaker_unpaid(tenant_name: str, unit_number: str, amount: float, days_overdue: int) -> str:

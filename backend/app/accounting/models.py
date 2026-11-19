@@ -23,7 +23,7 @@ from app.models.base import TimestampMixin, UUIDMixin
 class ChartOfAccount(Base, UUIDMixin, TimestampMixin):
     """Extended Chart of Accounts — one set per business, customisable.
 
-    Coexists alongside the legacy `accounts` table for new deployments.
+    This is the only chart of accounts: `JournalEntry.account_id` points here.
     """
 
     __tablename__ = "chart_of_accounts"

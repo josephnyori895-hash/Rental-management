@@ -11,6 +11,7 @@ Unmatched payments flagged for manual review.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -20,6 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.billing import Invoice, InvoiceStatus, InvoiceType, Payment
 from app.models.tenant import Tenant
+
+logger = logging.getLogger(__name__)
 
 
 async def reconcile_pending(
@@ -36,6 +39,7 @@ async def reconcile_pending(
     unmatched_q = select(Payment).where(
         Payment.business_id == business_id,
         Payment.method == "mpesa",
+        Payment.invoice_id.is_(None),
         Payment.mpesa_raw.isnot(None),
     )
     payments = (await session.scalars(unmatched_q)).all()
@@ -102,12 +106,12 @@ async def get_unmatched_payments(
     business_id: uuid.UUID,
     limit: int = 50,
 ) -> list[dict]:
-    """Return M-Pesa payments not linked to any invoice."""
+    """Return mobile-money and bank claims not linked to any invoice."""
     q = select(Payment, Tenant.full_name, Tenant.mpesa_phone).join(
         Tenant, Payment.tenant_id == Tenant.id, isouter=True
     ).where(
         Payment.business_id == business_id,
-        Payment.method == "mpesa",
+        Payment.method.in_(["mpesa", "bank"]),
         Payment.invoice_id.is_(None),
     ).order_by(Payment.paid_at.desc()).limit(limit)
 
@@ -119,8 +123,76 @@ async def get_unmatched_payments(
             "phone": r[2] or "—",
             "tenant_name": r[1] or "—",
             "reference": r[0].reference,
+            "method": r[0].method,
+            "status": r[0].status,
             "paid_at": str(r[0].paid_at),
             "has_raw_data": r[0].mpesa_raw is not None,
         }
         for r in rows
     ]
+
+
+async def match_payment(
+    session: AsyncSession,
+    business_id: uuid.UUID,
+    payment_id: uuid.UUID,
+    invoice_id: uuid.UUID,
+) -> dict:
+    """Attach an unmatched/claimed payment to an invoice.
+
+    Used for bank-transfer claims, which are recorded as pending payments and
+    need a human to confirm the money landed. The payment is only credited up
+    to the invoice balance; any excess stays on the payment record rather than
+    being silently written off.
+    """
+    payment = await session.get(Payment, payment_id)
+    invoice = await session.get(Invoice, invoice_id)
+    if payment is None or payment.business_id != business_id:
+        raise ValueError("Payment not found")
+    if invoice is None or invoice.business_id != business_id:
+        raise ValueError("Invoice not found")
+    if payment.invoice_id is not None:
+        raise ValueError("Payment is already matched to an invoice")
+
+    applied = min(payment.amount, invoice.balance)
+    invoice.paid_amount = (invoice.paid_amount or Decimal("0")) + applied
+    invoice.balance = invoice.amount - invoice.paid_amount
+    invoice.status = (
+        InvoiceStatus.PAID.value
+        if invoice.balance <= 0
+        else InvoiceStatus.PARTIAL.value
+    )
+    payment.invoice_id = invoice.id
+    payment.status = "reconciled"
+    await session.commit()
+
+    # The ledger and the tenant's receipt must reflect a confirmed payment.
+    from app.accounting.service import auto_post_payment
+    from app.notifications.service import send_payment_receipt
+    try:
+        await auto_post_payment(session, payment)
+    except Exception:
+        logger.warning(
+            "Ledger posting failed for reconciled payment %s", payment.id, exc_info=True
+        )
+    try:
+        from app.models.property import Unit
+
+        unit = await session.get(Unit, invoice.unit_id) if invoice.unit_id else None
+        await send_payment_receipt(
+            session, payment,
+            unit_number=unit.unit_number if unit else None,
+            invoice_status=invoice.status,
+        )
+    except Exception:
+        logger.warning(
+            "Receipt failed for reconciled payment %s", payment.id, exc_info=True
+        )
+
+    return {
+        "payment_id": str(payment.id),
+        "invoice_id": str(invoice.id),
+        "applied": float(applied),
+        "invoice_status": invoice.status,
+        "invoice_balance": float(invoice.balance),
+    }

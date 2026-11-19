@@ -3,6 +3,7 @@ RENTAL OS — Billing Router
 
 - GET /billing/invoices       : list invoices for the business (paginated)
 - GET /billing/invoices/{id}  : single invoice detail
+- POST /billing/rent-run      : raise this month's rent invoices (idempotent)
 - POST /billing/bills         : DEPRECATED — free-form bill, no tariff or meter behind
                                 it. Use POST /billing/utilities/readings instead.
 """
@@ -19,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, field_validator
 
 from app.accounting.service import auto_post_invoice
+from app.billing.rent_run import RentRunError, month_period, run_rent_for_period
 from app.billing.utilities import income_code_for
 from app.api.deps import SessionDep, get_current_business
 from app.models.billing import Invoice, InvoiceStatus, Payment
@@ -43,6 +45,14 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 # that happened to spell "deposit" was posted as rental income. Validating
 # against the utilities the rest of the system knows about removes both.
 ALLOWED_BILL_TYPES: tuple[str, ...] = tuple(kind.value for kind in UtilityType)
+
+
+class RentRunRequest(BaseModel):
+    """A calendar month to bill, or the current one when omitted."""
+
+    year: int | None = None
+    month: int | None = None
+    dry_run: bool = False
 
 
 class CreateBillRequest(BaseModel):
@@ -198,6 +208,36 @@ async def get_invoice(
             for p in payments
         ],
     }
+
+
+@router.post("/rent-run")
+async def run_monthly_rent(
+    data: RentRunRequest,
+    session: SessionDep,
+    business: Business = Depends(get_current_business),
+):
+    """Raise one rent invoice per active lease for a calendar month.
+
+    Rent used to be invoiced once, at enrollment, so a tenancy never accrued
+    a second invoice and the arrears reports only ever saw its first month.
+
+    Idempotent: a lease already invoiced for any part of the month is skipped,
+    so this can be retried (or left on a cron) without double-billing. Set
+    `dry_run` to see what would be raised without writing anything.
+    """
+    today = date.today()
+    try:
+        period_start, period_end = month_period(
+            data.year if data.year is not None else today.year,
+            data.month if data.month is not None else today.month,
+        )
+        result = await run_rent_for_period(
+            session, business.id, period_start, period_end, dry_run=data.dry_run
+        )
+    except RentRunError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return result.as_dict()
 
 
 @router.post("/bills", deprecated=True)

@@ -2,7 +2,11 @@
 RENTAL OS — Accounting Models
 
 Module:
-    Account (chart of accounts) and JournalEntry (double-entry postings).
+    JournalEntry (double-entry postings) and AccountType.
+
+    The live chart of accounts is `app/accounting/models.py::ChartOfAccount`.
+    A duplicate `Account` model (table `accounts`) used to live here; nothing
+    read it and no migration created it.
 
 Purpose:
     Every rent payment, deposit and expense posts here so the operator gets
@@ -17,7 +21,6 @@ from enum import Enum
 from uuid import UUID
 
 from sqlalchemy import (
-    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -40,34 +43,6 @@ class AccountType(str, Enum):
     EXPENSE = "expense"
     CONTRA_ASSET = "contra_asset"
     CONTRA_LIABILITY = "contra_liability"
-
-
-# Default chart-of-accounts seeded per business on registration.
-SYSTEM_ACCOUNTS = [
-    ("1000", "Cash", AccountType.ASSET),
-    ("1100", "M-Pesa Float", AccountType.ASSET),
-    ("1200", "Bank", AccountType.ASSET),
-    ("2000", "Security Deposits (Liability)", AccountType.LIABILITY),
-    ("4000", "Rental Income", AccountType.REVENUE),
-    ("4100", "Late Fee Income", AccountType.REVENUE),
-    ("4200", "Utility Reimbursement", AccountType.REVENUE),
-    ("5000", "Property Expenses", AccountType.EXPENSE),
-]
-
-
-class Account(Base, UUIDMixin, TimestampMixin):
-    """A ledger account within a business chart of accounts."""
-
-    __tablename__ = "accounts"
-
-    business_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True), ForeignKey("businesses.id", ondelete="CASCADE"),
-        nullable=False, index=True,
-    )
-    code: Mapped[str] = mapped_column(String(20), nullable=False)
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
-    account_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
-    is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class JournalEntry(Base, UUIDMixin, TimestampMixin):
