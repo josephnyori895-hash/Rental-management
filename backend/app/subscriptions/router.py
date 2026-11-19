@@ -18,7 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import OwnerDep, SessionDep, get_current_business, get_current_user
-from app.platform_admin.dependencies import PlatformAdminDep
+from app.platform_admin.dependencies import PlatformAdminDep, SuperAdminDep
 from app.platform_admin.audit import record_platform_admin_event
 from app.models.business import Business
 from app.models.subscriptions import (
@@ -372,7 +372,7 @@ async def admin_catalogue(session: SessionDep, admin: PlatformAdminDep):
 
 
 @router.post("/admin/catalogue", status_code=201)
-async def create_catalogue_item(data: CatalogItemCreate, session: SessionDep, admin: PlatformAdminDep, request: Request):
+async def create_catalogue_item(data: CatalogItemCreate, session: SessionDep, admin: SuperAdminDep, request: Request):
     if data.item_type == "package" and data.pricing_model == "one_time":
         raise HTTPException(status_code=422, detail="Base packages must use recurring pricing")
     existing = await session.scalar(
@@ -396,7 +396,7 @@ async def update_catalogue_item(
     item_id: UUID,
     data: CatalogItemUpdate,
     session: SessionDep,
-    admin: PlatformAdminDep,
+    admin: SuperAdminDep,
     request: Request,
 ):
     item = await session.scalar(
@@ -425,7 +425,7 @@ async def update_catalogue_item(
 
 
 @router.post("/admin/catalogue/{item_id}/prices", status_code=201)
-async def create_price_version(item_id: UUID, data: PriceVersionCreate, session: SessionDep, admin: PlatformAdminDep, request: Request):
+async def create_price_version(item_id: UUID, data: PriceVersionCreate, session: SessionDep, admin: SuperAdminDep, request: Request):
     item = await session.scalar(
         select(SubscriptionCatalogItem)
         .where(SubscriptionCatalogItem.id == item_id)
