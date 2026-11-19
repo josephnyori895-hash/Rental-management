@@ -25,6 +25,9 @@ def upgrade() -> None:
         sa.Column("item_name_snapshot", sa.String(160), nullable=False),
         sa.Column("quantity", sa.Integer(), nullable=False),
         sa.Column("billing_interval_snapshot", sa.String(16), nullable=False),
+        sa.Column("billable_units_snapshot", sa.Integer(), nullable=False),
+        sa.Column("included_units_snapshot", sa.Integer(), nullable=False),
+        sa.Column("per_unit_amount_snapshot", sa.Numeric(12, 2), nullable=False),
         sa.Column("unit_amount", sa.Numeric(12, 2), nullable=False),
         sa.Column("total_amount", sa.Numeric(12, 2), nullable=False),
         sa.Column("features_snapshot", sa.JSON(), nullable=False),
@@ -38,6 +41,7 @@ def upgrade() -> None:
     op.create_check_constraint("quantity_positive", "subscription_invoice_lines", "quantity >= 1")
     op.create_check_constraint("amounts_nonnegative", "subscription_invoice_lines", "unit_amount >= 0 AND total_amount >= 0")
     op.create_check_constraint("valid_billing_interval", "subscription_invoice_lines", "billing_interval_snapshot IN ('monthly', 'quarterly', 'annual', 'one_time')")
+    op.create_check_constraint("unit_snapshot_nonnegative", "subscription_invoice_lines", "billable_units_snapshot >= 0 AND included_units_snapshot >= 0 AND per_unit_amount_snapshot >= 0")
     op.execute("""
         CREATE FUNCTION prevent_subscription_invoice_line_mutation()
         RETURNS trigger AS $
