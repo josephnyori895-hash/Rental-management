@@ -195,7 +195,7 @@ async def quote_subscription(
             "per_unit_amount": str(price.per_unit_amount),
             "billing_interval": price.billing_interval,
             "features": item.features or {},
-        } for item, _, amount in lines],
+        } for item, price, amount in lines],
         "notice": "Quote only. No payment has been initiated and no subscription has been activated.",
     }
 
