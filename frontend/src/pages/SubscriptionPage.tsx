@@ -115,7 +115,7 @@ export default function SubscriptionPage() {
           <div className="mt-4 space-y-3">
             {addonItems.map((item) => <label key={item.code} className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-slate-950/40 p-4">
               <input type="checkbox" checked={addons.includes(item.code)} onChange={() => toggleAddon(item.code)} className="mt-1 accent-emerald-400" />
-              <span className="min-w-0 flex-1"><span className="flex flex-wrap justify-between gap-2"><strong>{item.name}</strong><strong>{item.currency} {item.amount}</strong></span><span className="mt-1 block text-xs text-slate-400">{item.description || item.pricing_model.replaceAll("_", " ")}</span></span>
+              <span className="min-w-0 flex-1"><span className="flex flex-wrap justify-between gap-2"><strong>{item.name}</strong><strong>{item.currency} {item.amount} <small className="font-normal text-slate-500">/ {item.billing_interval}</small></strong></span><span className="mt-1 block text-xs text-slate-400">{item.description || item.pricing_model.replaceAll("_", " ")}</span></span>
             </label>)}
             {!addonItems.length && <p className="text-sm text-slate-500">No optional add-ons are published yet.</p>}
           </div>
