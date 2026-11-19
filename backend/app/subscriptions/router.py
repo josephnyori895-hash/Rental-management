@@ -12,7 +12,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import SessionDep, get_current_business, get_current_user, require_roles
@@ -136,11 +136,18 @@ async def current_subscription(
     session: SessionDep,
     business: Business = Depends(get_current_business),
 ):
+    # A live subscription outranks a draft. Ordering by `created_at` alone let a
+    # selection made today hide the subscription that is actually running.
+    status_rank = case(
+        {"active": 0, "trialing": 0, "past_due": 1, "draft": 2},
+        value=BusinessSubscription.status,
+        else_=3,
+    )
     sub = (await session.execute(
         select(BusinessSubscription)
         .where(BusinessSubscription.business_id == business.id,
                BusinessSubscription.status.in_(("active", "trialing", "past_due", "draft")))
-        .order_by(BusinessSubscription.created_at.desc())
+        .order_by(status_rank, BusinessSubscription.created_at.desc())
         .limit(1)
     )).scalar_one_or_none()
     return {

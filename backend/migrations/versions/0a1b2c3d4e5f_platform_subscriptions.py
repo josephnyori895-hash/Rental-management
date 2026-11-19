@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0a1b2c3d4e5f"
-down_revision: Union[str, None] = "f6a7b8c9d0e1"
+down_revision: Union[str, None] = 'f6a7b8c9d0e1'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -29,6 +29,11 @@ def upgrade() -> None:
         sa.Column("display_order", sa.Integer(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        # Names match the constraint names SQLAlchemy renders from the model
+        # under the `ck_%(table_name)s_%(constraint_name)s` convention.
+        sa.CheckConstraint("item_type IN ('package', 'addon')", name="item_type"),
+        sa.CheckConstraint("pricing_model IN ('flat_recurring', 'per_billable_unit', 'one_time')", name="pricing_model"),
+        sa.CheckConstraint("code ~ '^[a-z0-9][a-z0-9_-]*$'", name="code_format"),
     )
     op.create_table(
         "subscription_price_versions",
@@ -43,6 +48,11 @@ def upgrade() -> None:
         sa.Column("active", sa.Boolean(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("amount >= 0", name="amount_non_negative"),
+        sa.CheckConstraint("per_unit_amount >= 0", name="per_unit_non_negative"),
+        sa.CheckConstraint("included_units >= 0", name="included_units_non_negative"),
+        sa.CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
+        sa.CheckConstraint("effective_to IS NULL OR effective_to > effective_from", name="effective_window"),
     )
     op.create_index("ix_subscription_price_versions_catalog_item_id", "subscription_price_versions", ["catalog_item_id"])
     op.create_index("ix_subscription_price_item_effective", "subscription_price_versions", ["catalog_item_id", "effective_from", "effective_to"])
@@ -59,6 +69,8 @@ def upgrade() -> None:
         sa.Column("cancelled_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("status IN ('draft', 'trialing', 'active', 'past_due', 'cancelled', 'expired')", name="status"),
+        sa.CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
     )
     op.create_index("ix_business_subscriptions_business_id", "business_subscriptions", ["business_id"])
     op.create_index("ix_business_subscription_status", "business_subscriptions", ["business_id", "status"])
@@ -77,6 +89,9 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("subscription_id", "catalog_item_id", name="uq_subscription_item_catalog"),
+        sa.CheckConstraint("quantity > 0", name="quantity_positive"),
+        sa.CheckConstraint("unit_amount_snapshot >= 0", name="unit_amount"),
+        sa.CheckConstraint("total_amount_snapshot >= 0", name="total_amount"),
     )
     op.create_index("ix_business_subscription_items_subscription_id", "business_subscription_items", ["subscription_id"])
     op.create_table(
@@ -94,6 +109,10 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("business_id", "invoice_number", name="uq_subscription_invoice_number"),
+        sa.CheckConstraint("status IN ('draft', 'open', 'paid', 'void', 'overdue')", name="status"),
+        sa.CheckConstraint("subtotal >= 0", name="subtotal"),
+        sa.CheckConstraint("total >= 0", name="total"),
+        sa.CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
     )
     op.create_index("ix_subscription_invoices_business_id", "subscription_invoices", ["business_id"])
     op.create_index("ix_subscription_invoices_subscription_id", "subscription_invoices", ["subscription_id"])
@@ -111,6 +130,9 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("provider", "provider_reference", name="uq_subscription_payment_provider_ref"),
+        sa.CheckConstraint("status IN ('pending', 'completed', 'failed', 'refunded')", name="status"),
+        sa.CheckConstraint("amount >= 0", name="amount"),
+        sa.CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
     )
     op.create_index("ix_subscription_payments_business_id", "subscription_payments", ["business_id"])
     op.create_index("ix_subscription_payments_invoice_id", "subscription_payments", ["invoice_id"])
