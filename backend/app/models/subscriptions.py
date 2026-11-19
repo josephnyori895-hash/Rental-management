@@ -132,7 +132,7 @@ class BusinessSubscriptionItem(Base, UUIDMixin, TimestampMixin):
     item_code_snapshot: Mapped[str] = mapped_column(String(80), nullable=False)
     item_name_snapshot: Mapped[str] = mapped_column(String(160), nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    billing_interval_snapshot: Mapped[str] = mapped_column(String(16), nullable=False, default="monthly")
+    billing_interval_snapshot: Mapped[str] = mapped_column(String(16), nullable=False, default="monthly", server_default="monthly")
     unit_amount_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     total_amount_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     features_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
