@@ -21,10 +21,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
+from app.api.deps import require_owner
 from app.core.config import settings
+from app.models.business import User
 
 log = logging.getLogger("rental.facebook_bot")
 
@@ -55,8 +57,31 @@ class WebhookPayload(BaseModel):
     entry: list[dict] = []
 
 
+def _require_facebook_signature(request: Request, body: bytes) -> None:
+    """Facebook signs every callback with the app secret in X-Hub-Signature-256.
+
+    The secret is mandatory here: an unsigned (or mis-signed) webhook is a
+    control channel — it can drive the bot that sends messages from the business
+    page — so a missing secret fails closed rather than disabling verification.
+    """
+    if not settings.FB_WEBHOOK_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Facebook webhook is not configured",
+        )
+    supplied = request.headers.get("X-Hub-Signature-256", "")
+    expected = "sha256=" + hmac.new(
+        settings.FB_WEBHOOK_SECRET.encode(), body, hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid webhook signature")
+
+
 @router.post("/webhook/facebook")
-async def receive_facebook_message(payload: WebhookPayload):
+async def receive_facebook_message(
+    payload: WebhookPayload, request: Request
+):
+    _require_facebook_signature(request, await request.body())
     for entry in payload.entry:
         for change in entry.get("messaging", []):
             sender_id = change.get("sender", {}).get("id")
@@ -220,7 +245,7 @@ class InstagramPost(BaseModel):
 
 
 @router.post("/api/v1/social/post")
-async def post_to_instagram(post: InstagramPost):
+async def post_to_instagram(post: InstagramPost, _user: User = Depends(require_owner)):
     """Post to Instagram Feed or Story via Graph API."""
     if not settings.IG_ACCESS_TOKEN or not settings.IG_BUSINESS_ID:
         raise HTTPException(
@@ -284,7 +309,7 @@ async def post_to_instagram(post: InstagramPost):
 
 
 @router.get("/api/v1/social/instagram")
-async def get_instagram_feed():
+async def get_instagram_feed(_user: User = Depends(require_owner)):
     """Fetch recent Instagram posts for the business."""
     if not settings.IG_ACCESS_TOKEN or not settings.IG_BUSINESS_ID:
         raise HTTPException(
@@ -314,8 +339,12 @@ async def get_instagram_feed():
 # ─── Payment Reminder via Messenger ──────────────────────────────
 
 @router.post("/api/v1/social/send-reminder")
-async def send_payment_reminder(recipient_id: str, amount: float, unit: str):
+async def send_payment_reminder(
+    recipient_id: str, amount: float, unit: str, _user: User = Depends(require_owner)
+):
     """Send a payment reminder to a tenant via Messenger."""
+    if not recipient_id or amount <= 0:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="recipient_id and a positive amount are required")
     message = {
         "text": (
             f"💸 Payment Reminder\n\n"
@@ -331,12 +360,16 @@ async def send_payment_reminder(recipient_id: str, amount: float, unit: str):
 # ─── Webhook Signature Verification ──────────────────────────────
 
 def verify_webhook_signature(body: bytes, signature: str) -> bool:
-    """Verify Facebook webhook signature using HMAC-SHA256."""
+    """Verify Facebook webhook signature using HMAC-SHA256.
+
+    Fails closed: an unset secret is not "skip in dev mode", it is an
+    unverifiable webhook and therefore refused.
+    """
     if not settings.FB_WEBHOOK_SECRET:
-        return True  # Skip in dev mode
-    expected = hmac.new(
+        return False
+    expected = "sha256=" + hmac.new(
         settings.FB_WEBHOOK_SECRET.encode(),
         body,
         hashlib.sha256,
     ).hexdigest()
-    return hmac.compare_digest(f"sha256={expected}", signature)
+    return hmac.compare_digest(expected, signature)
