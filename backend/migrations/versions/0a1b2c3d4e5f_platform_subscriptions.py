@@ -35,6 +35,7 @@ def upgrade() -> None:
         sa.CheckConstraint("pricing_model IN ('flat_recurring', 'per_billable_unit', 'one_time')", name="pricing_model"),
         sa.CheckConstraint("code ~ '^[a-z0-9][a-z0-9_-]*$'", name="code_format"),
     )
+    op.create_index("ix_subscription_catalog_items_created_at", "subscription_catalog_items", ["created_at"])
     op.create_table(
         "subscription_price_versions",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -55,6 +56,7 @@ def upgrade() -> None:
         sa.CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
         sa.CheckConstraint("effective_to IS NULL OR effective_to > effective_from", name="effective_window"),
     )
+    op.create_index("ix_subscription_price_versions_created_at", "subscription_price_versions", ["created_at"])
     op.create_index("ix_subscription_price_versions_catalog_item_id", "subscription_price_versions", ["catalog_item_id"])
     op.create_index("ix_subscription_price_item_effective", "subscription_price_versions", ["catalog_item_id", "effective_from", "effective_to"])
     op.create_table(
@@ -74,6 +76,7 @@ def upgrade() -> None:
         sa.CheckConstraint("status IN ('draft', 'trialing', 'active', 'past_due', 'cancelled', 'expired')", name="status"),
         sa.CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
     )
+    op.create_index("ix_business_subscriptions_created_at", "business_subscriptions", ["created_at"])
     op.create_index("ix_business_subscriptions_business_id", "business_subscriptions", ["business_id"])
     op.create_index("ix_business_subscription_status", "business_subscriptions", ["business_id", "status"])
     op.create_table(
@@ -96,6 +99,7 @@ def upgrade() -> None:
         sa.CheckConstraint("unit_amount_snapshot >= 0", name="unit_amount"),
         sa.CheckConstraint("total_amount_snapshot >= 0", name="total_amount"),
     )
+    op.create_index("ix_business_subscription_items_created_at", "business_subscription_items", ["created_at"])
     op.create_index("ix_business_subscription_items_subscription_id", "business_subscription_items", ["subscription_id"])
     op.create_table(
         "subscription_invoices",
@@ -118,6 +122,7 @@ def upgrade() -> None:
         sa.CheckConstraint("total >= 0", name="total"),
         sa.CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
     )
+    op.create_index("ix_subscription_invoices_created_at", "subscription_invoices", ["created_at"])
     op.create_index("ix_subscription_invoices_business_id", "subscription_invoices", ["business_id"])
     op.create_index("ix_subscription_invoices_subscription_id", "subscription_invoices", ["subscription_id"])
     op.create_table(
@@ -138,6 +143,7 @@ def upgrade() -> None:
         sa.CheckConstraint("amount >= 0", name="amount"),
         sa.CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
     )
+    op.create_index("ix_subscription_payments_created_at", "subscription_payments", ["created_at"])
     op.create_index("ix_subscription_payments_business_id", "subscription_payments", ["business_id"])
     op.create_index("ix_subscription_payments_invoice_id", "subscription_payments", ["invoice_id"])
 
