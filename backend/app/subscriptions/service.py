@@ -199,3 +199,32 @@ async def apply_verified_platform_subscription_payment(
     ))
     await session.flush()
     return {"payment_id": str(payment.id), "status": "succeeded", "idempotent": False}
+
+
+
+async def process_due_subscription_cancellations(session: AsyncSession) -> int:
+    """End subscriptions whose owner-requested period-end cancellation is due."""
+    now = datetime.now(timezone.utc)
+    due = (await session.scalars(
+        select(BusinessSubscription)
+        .where(
+            BusinessSubscription.cancel_at_period_end.is_(True),
+            BusinessSubscription.current_period_end.is_not(None),
+            BusinessSubscription.current_period_end <= now,
+            BusinessSubscription.status.in_(("active", "trialing", "past_due")),
+        )
+        .order_by(BusinessSubscription.current_period_end)
+        .with_for_update(skip_locked=True)
+    )).all()
+    for subscription in due:
+        subscription.status = "cancelled"
+        subscription.cancelled_at = now
+        subscription.cancel_at_period_end = False
+        session.add(BusinessSubscriptionEvent(
+            business_id=subscription.business_id,
+            subscription_id=subscription.id,
+            event_type="subscription.cancelled",
+            event_metadata={"reason": "period_end_cancellation"},
+        ))
+    await session.flush()
+    return len(due)
