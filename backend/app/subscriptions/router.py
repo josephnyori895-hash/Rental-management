@@ -231,6 +231,8 @@ async def admin_catalogue(session: SessionDep, admin: PlatformAdminDep):
 
 @router.post("/admin/catalogue", status_code=201)
 async def create_catalogue_item(data: CatalogItemCreate, session: SessionDep, admin: PlatformAdminDep, request: Request):
+    if data.item_type == "package" and data.pricing_model == "one_time":
+        raise HTTPException(status_code=422, detail="Base packages must use recurring pricing")
     existing = await session.scalar(
         select(SubscriptionCatalogItem).where(SubscriptionCatalogItem.code == data.code)
     )
