@@ -295,6 +295,12 @@ async def cancel_subscription(
         return {"subscription_id": str(sub.id), "status": sub.status,
                 "cancel_at_period_end": False, "idempotent": True}
 
+    if sub.cancel_at_period_end:
+        return {"subscription_id": str(sub.id), "status": sub.status,
+                "cancel_at_period_end": True,
+                "current_period_end": sub.current_period_end.isoformat() if sub.current_period_end else None,
+                "idempotent": True}
+
     now = datetime.now(timezone.utc)
     if sub.status == "draft":
         open_invoice = await session.scalar(
