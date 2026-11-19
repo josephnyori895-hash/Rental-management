@@ -292,9 +292,6 @@ async def create_catalogue_item(data: CatalogItemCreate, session: SessionDep, ad
     return {"id": str(item.id), "code": item.code, "active": item.active}
 
 
-@router.post("/admin/catalogue/{item_id}/prices", status_code=201)
-
-
 @router.put("/admin/catalogue/{item_id}")
 async def update_catalogue_item(
     item_id: UUID,
@@ -328,6 +325,7 @@ async def update_catalogue_item(
             "name": item.name, "features": item.features or {}}
 
 
+@router.post("/admin/catalogue/{item_id}/prices", status_code=201)
 async def create_price_version(item_id: UUID, data: PriceVersionCreate, session: SessionDep, admin: PlatformAdminDep, request: Request):
     item = await session.scalar(
         select(SubscriptionCatalogItem).where(SubscriptionCatalogItem.id == item_id)
