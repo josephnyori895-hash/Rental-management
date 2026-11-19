@@ -165,11 +165,14 @@ async def list_rooms(
         lease = await session.scalar(
             select(Lease).where(
                 Lease.unit_id == u.id,
+                Lease.business_id == user.business_id,
                 Lease.status == "active",
             ).order_by(Lease.start_date.desc()).limit(1)
         )
         if lease:
             tenant = await session.get(Tenant, lease.tenant_id)
+            if tenant is not None and tenant.business_id != user.business_id:
+                tenant = None
             room["tenant_id"] = str(tenant.id) if tenant else None
             room["tenant_name"] = tenant.full_name if tenant else None
             room["tenant_phone"] = tenant.phone or tenant.mpesa_phone if tenant else None
@@ -185,6 +188,7 @@ async def list_rooms(
         inv = await session.scalar(
             select(Invoice).where(
                 Invoice.unit_id == u.id,
+                Invoice.business_id == user.business_id,
             ).order_by(Invoice.period_start.desc().nullslast()).limit(1)
         )
         if inv:
@@ -194,6 +198,7 @@ async def list_rooms(
             total = await session.scalar(
                 select(func.coalesce(func.sum(Invoice.paid_amount), 0)).where(
                     Invoice.unit_id == u.id,
+                    Invoice.business_id == user.business_id,
                 )
             )
             room["total_paid"] = float(total or 0)
