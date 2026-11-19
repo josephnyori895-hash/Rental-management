@@ -17,6 +17,7 @@ from app.core.database import Base
 from app.models.base import *        # AuditLog + mixins
 from app.models.business import *    # Business, User, UserRole, SubscriptionTier
 from app.models.subscriptions import *  # Rental OS platform subscription models
+from app.models.platform_admin import *  # Separate platform administrator identities
 from app.models.tenant import *      # Tenant
 from app.models.lease import *       # Lease, LeaseStatus
 from app.models.property import *    # Property, Unit, enums
