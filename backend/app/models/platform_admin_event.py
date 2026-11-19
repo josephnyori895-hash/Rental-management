@@ -21,7 +21,7 @@ class PlatformAdminEvent(Base, UUIDMixin):
 
     admin_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("platform_admins.id", ondelete="SET NULL"),
-        nullable=True, index=True,
+        nullable=True,
     )
     email_snapshot: Mapped[str] = mapped_column(String(255), nullable=False)
     action: Mapped[str] = mapped_column(String(100), nullable=False)
