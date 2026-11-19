@@ -45,6 +45,7 @@ class SubscriptionPriceVersion(Base, UUIDMixin, TimestampMixin):
         CheckConstraint("amount >= 0", name="amount_nonnegative"),
         CheckConstraint("per_unit_amount >= 0", name="per_unit_amount_nonnegative"),
         CheckConstraint("included_units >= 0", name="included_units_nonnegative"),
+        CheckConstraint("billing_interval IN ('monthly', 'quarterly', 'annual', 'one_time')", name="valid_billing_interval"),
         CheckConstraint("effective_to IS NULL OR effective_to > effective_from", name="valid_effective_period"),
     )
 
@@ -53,6 +54,7 @@ class SubscriptionPriceVersion(Base, UUIDMixin, TimestampMixin):
         nullable=False, index=True,
     )
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="KES")
+    billing_interval: Mapped[str] = mapped_column(String(16), nullable=False, default="monthly")
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     included_units: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     per_unit_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0"))
@@ -66,6 +68,7 @@ class BusinessSubscription(Base, UUIDMixin, TimestampMixin):
     __table_args__ = (
         Index("ix_business_subscription_status", "business_id", "status"),
         CheckConstraint("status IN ('draft', 'trialing', 'active', 'past_due', 'cancelled', 'expired')", name="valid_status"),
+        CheckConstraint("billing_interval IN ('monthly', 'quarterly', 'annual')", name="valid_billing_interval"),
     )
 
     business_id: Mapped[UUID] = mapped_column(
@@ -73,7 +76,9 @@ class BusinessSubscription(Base, UUIDMixin, TimestampMixin):
         nullable=False, index=True,
     )
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
+    billing_interval: Mapped[str] = mapped_column(String(16), nullable=False, default="monthly")
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="KES")
+    billing_interval: Mapped[str] = mapped_column(String(16), nullable=False, default="monthly")
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     current_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -86,6 +91,7 @@ class BusinessSubscriptionItem(Base, UUIDMixin, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("subscription_id", "catalog_item_id", name="uq_subscription_item_catalog"),
         CheckConstraint("quantity >= 1", name="quantity_positive"),
+        CheckConstraint("billing_interval_snapshot IN ('monthly', 'quarterly', 'annual', 'one_time')", name="valid_billing_interval"),
         CheckConstraint("unit_amount_snapshot >= 0 AND total_amount_snapshot >= 0", name="amounts_nonnegative"),
     )
 
@@ -104,6 +110,7 @@ class BusinessSubscriptionItem(Base, UUIDMixin, TimestampMixin):
     item_code_snapshot: Mapped[str] = mapped_column(String(80), nullable=False)
     item_name_snapshot: Mapped[str] = mapped_column(String(160), nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    billing_interval_snapshot: Mapped[str] = mapped_column(String(16), nullable=False, default="monthly")
     unit_amount_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     total_amount_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     features_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
@@ -116,6 +123,7 @@ class SubscriptionInvoice(Base, UUIDMixin, TimestampMixin):
         UniqueConstraint("business_id", "invoice_number", name="uq_subscription_invoice_number"),
         CheckConstraint("subtotal >= 0 AND total >= 0", name="amounts_nonnegative"),
         CheckConstraint("status IN ('draft', 'open', 'paid', 'void', 'past_due')", name="valid_status"),
+        CheckConstraint("billing_interval IN ('monthly', 'quarterly', 'annual')", name="valid_billing_interval"),
     )
 
     business_id: Mapped[UUID] = mapped_column(
