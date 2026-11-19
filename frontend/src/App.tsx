@@ -171,6 +171,10 @@ export default function App() {
     })();
   }, []);
 
+  if ((window.location.pathname.replace(/\\/+$/, "") || "/") === "/platform-admin") {
+    return <PlatformAdminConsole />;
+  }
+
   if (!token) {
     const path = window.location.pathname.replace(/\/+$/, "") || "/";
     if (path === "/register") return <Register />;
