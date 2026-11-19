@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import Login from "./pages/Login";
+import Welcome from "./pages/Welcome";
 import Overview from "./pages/Overview";
 import Properties from "./pages/Properties";
 import Tenants from "./pages/Tenants";
@@ -21,8 +21,6 @@ import { startNotificationPolling, type PaymentNotification } from "./lib/notifi
 import NotificationToast from "./components/NotificationToast";
 import NotificationDropdown from "./components/NotificationDropdown";
 import TenantDetailModal from "./components/TenantDetailModal";
-import Background from "./components/Background";
-import LoginBackground from "./components/LoginBackground";
 
 import {
   LayoutDashboard, Building2, Users, CreditCard, Wrench, Receipt,
@@ -170,15 +168,7 @@ export default function App() {
 
   if (!token) {
     return (
-      <div className="min-h-screen bg-slate-950">
-        <LoginBackground />
-        <Login
-          onLogin={(t) => {
-            setToken(t);
-            setView("overview");
-          }}
-        />
-      </div>
+      <Welcome onLogin={(t) => { setToken(t); setView("overview"); }} />
     );
   }
 
@@ -189,9 +179,7 @@ export default function App() {
   const sidebarWidth = sidebarCollapsed ? 64 : 240;
 
   return (
-    <div className="min-h-screen bg-slate-950 flex">
-      <Background />
-
+    <div className="rental-app-shell min-h-screen flex">
       <AnimatePresence>
         {sidebarOpen && (
           <motion.aside
@@ -199,10 +187,10 @@ export default function App() {
             animate={{ x: 0, opacity: 1, width: sidebarWidth }}
             exit={{ x: -240, opacity: 0 }}
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            className="shrink-0 bg-slate-900/80 backdrop-blur-2xl border-r border-white/[0.06] flex flex-col fixed h-full z-40"
+            className="premium-sidebar shrink-0 flex flex-col fixed h-full z-40"
           >
-            <div className="px-3 py-4 flex items-center gap-2.5 border-b border-white/[0.04] h-14">
-              <div className="w-8 h-8 shrink-0 rounded-lg bg-gradient-to-br from-emerald-400 to-sky-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+            <div className="premium-sidebar-header px-3 py-4 flex items-center gap-2.5 h-14">
+              <div className="premium-brand-mark w-8 h-8 shrink-0 rounded-lg flex items-center justify-center">
                 <Zap className="w-4 h-4 text-slate-950" />
               </div>
               <AnimatePresence>
@@ -261,12 +249,13 @@ export default function App() {
                 return (
                   <motion.button
                     key={n.key}
+                    data-active={isActive}
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.03 }}
                     onClick={() => goTo(n.key)}
                     whileHover={{ x: 2 }}
-                    className={`relative w-full flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm transition-all duration-200 group ${
+                    className={`premium-nav-item relative w-full flex items-center gap-3 px-2.5 py-2 text-sm transition-all duration-200 group ${
                       isActive
                         ? "text-emerald-300"
                         : "text-slate-400 hover:text-slate-200"
@@ -347,7 +336,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <div className="flex-1 min-w-0" style={{ marginLeft: sidebarOpen ? sidebarWidth : 0 }}>
+      <div className="premium-main flex-1 min-w-0" style={{ marginLeft: sidebarOpen ? sidebarWidth : 0 }}>
         {!sidebarOpen && (
           <motion.button
             initial={{ opacity: 0 }}
@@ -358,7 +347,7 @@ export default function App() {
             <Menu className="w-4 h-4" />
           </motion.button>
         )}
-        <main className="p-4 md:p-6 max-w-7xl mx-auto">
+        <main className="premium-content">
           <PageWrapper viewKey={view}>
             {view === "overview" && <Overview />}
             {view === "properties" && <Properties />}

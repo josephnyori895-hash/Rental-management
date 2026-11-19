@@ -1,3 +1,5 @@
+@import "./styles/public.css";
+@import "./styles/premium.css";
 @import "./styles/animations.css";
 @tailwind base;
 @tailwind components;
@@ -19,3 +21,4 @@ body {
     @apply w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm outline-none focus:border-emerald-500;
   }
 }
+
