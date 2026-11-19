@@ -38,6 +38,19 @@ def upgrade() -> None:
     op.create_check_constraint("quantity_positive", "subscription_invoice_lines", "quantity >= 1")
     op.create_check_constraint("amounts_nonnegative", "subscription_invoice_lines", "unit_amount >= 0 AND total_amount >= 0")
     op.create_check_constraint("valid_billing_interval", "subscription_invoice_lines", "billing_interval_snapshot IN ('monthly', 'quarterly', 'annual', 'one_time')")
+    op.execute("""
+        CREATE FUNCTION prevent_subscription_invoice_line_mutation()
+        RETURNS trigger AS $
+        BEGIN
+            RAISE EXCEPTION 'subscription invoice lines are immutable';
+        END;
+        $ LANGUAGE plpgsql;
+    """)
+    op.execute("""
+        CREATE TRIGGER subscription_invoice_lines_immutable
+        BEFORE UPDATE OR DELETE ON subscription_invoice_lines
+        FOR EACH ROW EXECUTE FUNCTION prevent_subscription_invoice_line_mutation();
+    """)
 
     op.create_table(
         "business_subscription_events",
@@ -69,6 +82,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute("DROP TRIGGER IF EXISTS subscription_invoice_lines_immutable ON subscription_invoice_lines")
+    op.execute("DROP FUNCTION IF EXISTS prevent_subscription_invoice_line_mutation()")
     op.execute("DROP TRIGGER IF EXISTS business_subscription_events_append_only ON business_subscription_events")
     op.execute("DROP FUNCTION IF EXISTS prevent_business_subscription_event_mutation()")
     op.drop_table("business_subscription_events")
