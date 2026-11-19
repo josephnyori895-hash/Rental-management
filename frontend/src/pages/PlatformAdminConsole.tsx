@@ -32,9 +32,12 @@ export default function PlatformAdminConsole() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [newItem, setNewItem] = useState({ code: "", name: "", item_type: "package", pricing_model: "flat_recurring", description: "", features: "{\n  \n}" });
+  const [editItem, setEditItem] = useState({ name: "", description: "", features: "{}", active: true, display_order: 0 });
   const [price, setPrice] = useState({ currency: "KES", billing_interval: "monthly", amount: "0.00", included_units: "0", per_unit_amount: "0.00", effective_from: new Date(Date.now() + 60000).toISOString().slice(0, 16) });
 
   const selected = useMemo(() => items.find((item) => item.id === selectedId), [items, selectedId]);
+
+  useEffect(() => { if (selected) setEditItem({ name: selected.name, description: selected.description || "", features: JSON.stringify(selected.features || {}, null, 2), active: selected.active, display_order: selected.display_order || 0 }); }, [selected]);
 
   async function loadCatalogue(activeToken: string) {
     const [profile, catalogue] = await Promise.all([
@@ -166,6 +169,34 @@ export default function PlatformAdminConsole() {
                 <label className="text-xs text-slate-400 sm:col-span-2">Feature entitlements (JSON)<textarea value={newItem.features} onChange={(e) => setNewItem({ ...newItem, features: e.target.value })} placeholder={'{"reports_advanced": true, "staff_limit": 5}'} className="mt-1 min-h-24 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 font-mono text-xs text-white" /></label>
               </div>
               <button disabled={busy} className="mt-4 rounded-lg bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">Create catalogue item</button>
+            </form>
+            <form onSubmit={async (e) => {
+              e.preventDefault(); if (!token || !selectedId) return;
+              setBusy(true); setError(""); setNotice("");
+              try {
+                let features: Record<string, unknown>;
+                try { features = JSON.parse(editItem.features || "{}"); }
+                catch { throw new Error("Feature entitlements must be valid JSON."); }
+                if (!features || Array.isArray(features) || typeof features !== "object") throw new Error("Feature entitlements must be a JSON object.");
+                await request(\`/subscriptions/admin/catalogue/\${selectedId}\`, token, "PUT", {
+                  name: editItem.name, description: editItem.description, features,
+                  active: editItem.active, display_order: Number(editItem.display_order),
+                });
+                const data = await request("/subscriptions/admin/catalogue", token);
+                setItems(data.items || []);
+                setNotice("Catalogue item updated.");
+              } catch (e: any) { setError(e.message || "Could not update catalogue item"); }
+              finally { setBusy(false); }
+            }} className="rounded-2xl border border-white/10 bg-slate-900/60 p-5">
+              <h2 className="text-lg font-semibold">Edit selected item</h2>
+              <p className="mt-1 text-xs text-slate-500">Deactivating an item prevents new selections; existing snapshots remain intact.</p>
+              <div className="mt-4 space-y-3">
+                <input required minLength={2} value={editItem.name} onChange={(e) => setEditItem({ ...editItem, name: e.target.value })} placeholder="Display name" className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm" />
+                <textarea value={editItem.description} onChange={(e) => setEditItem({ ...editItem, description: e.target.value })} placeholder="Description" className="min-h-16 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm" />
+                <label className="block text-xs text-slate-400">Feature entitlements (JSON)<textarea value={editItem.features} onChange={(e) => setEditItem({ ...editItem, features: e.target.value })} className="mt-1 min-h-24 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 font-mono text-xs text-white" /></label>
+                <div className="flex flex-wrap items-center gap-4"><label className="text-xs text-slate-400">Display order<input type="number" value={editItem.display_order} onChange={(e) => setEditItem({ ...editItem, display_order: Number(e.target.value) })} className="mt-1 block w-24 rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white" /></label><label className="mt-4 flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={editItem.active} onChange={(e) => setEditItem({ ...editItem, active: e.target.checked })} /> Active for new selections</label></div>
+              </div>
+              <button disabled={busy || !selectedId} className="mt-4 rounded-lg border border-white/15 px-4 py-2 text-sm disabled:opacity-40">Save catalogue changes</button>
             </form>
             <form onSubmit={addPrice} className="rounded-2xl border border-white/10 bg-slate-900/60 p-5">
               <h2 className="text-lg font-semibold">Add price version</h2>
