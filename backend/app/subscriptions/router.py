@@ -12,7 +12,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import case, select
+from sqlalchemy import case, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import SessionDep, get_current_business, get_current_user
@@ -253,6 +253,11 @@ async def create_price_version(item_id: UUID, data: PriceVersionCreate, session:
     if data.effective_to is not None:
         if data.effective_to.tzinfo is None or data.effective_to <= data.effective_from:
             raise HTTPException(status_code=422, detail="effective_to must be later and timezone-aware")
+    # Serialize price-version writes even when the item has no rows yet.
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+        {"lock_key": f"subscription-price:{item.id}"},
+    )
     previous = (await session.execute(
         select(SubscriptionPriceVersion)
         .where(SubscriptionPriceVersion.catalog_item_id == item.id,
