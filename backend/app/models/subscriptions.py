@@ -166,3 +166,53 @@ class SubscriptionPayment(Base, UUIDMixin, TimestampMixin):
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="KES")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SubscriptionInvoiceLine(Base, UUIDMixin, TimestampMixin):
+    """Immutable description of what a Rental OS subscription invoice charged."""
+    __tablename__ = "subscription_invoice_lines"
+    __table_args__ = (
+        UniqueConstraint("invoice_id", "line_number", name="uq_subscription_invoice_line_number"),
+        CheckConstraint("line_number >= 1", name="line_number_positive"),
+        CheckConstraint("quantity >= 1", name="quantity_positive"),
+        CheckConstraint("unit_amount >= 0 AND total_amount >= 0", name="amounts_nonnegative"),
+        CheckConstraint("billing_interval_snapshot IN ('monthly', 'quarterly', 'annual', 'one_time')", name="valid_billing_interval"),
+    )
+
+    invoice_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("subscription_invoices.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    line_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    item_code_snapshot: Mapped[str] = mapped_column(String(80), nullable=False)
+    item_name_snapshot: Mapped[str] = mapped_column(String(160), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    billing_interval_snapshot: Mapped[str] = mapped_column(String(16), nullable=False)
+    unit_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    total_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    features_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class BusinessSubscriptionEvent(Base, UUIDMixin):
+    """Append-only lifecycle history for one business subscription."""
+    __tablename__ = "business_subscription_events"
+    __table_args__ = (
+        Index("ix_business_subscription_event_subscription", "subscription_id", "created_at"),
+        Index("ix_business_subscription_event_business", "business_id", "created_at"),
+    )
+
+    business_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("businesses.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    subscription_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("business_subscriptions.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    actor_user_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    event_metadata: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
