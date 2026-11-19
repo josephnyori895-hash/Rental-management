@@ -9,6 +9,7 @@ import asyncio
 import os
 
 from sqlalchemy import select
+from pydantic import EmailStr, TypeAdapter
 
 from app.core.database import async_session_factory, close_db
 from app.core.security import hash_password
@@ -16,11 +17,15 @@ from app.models.platform_admin import PlatformAdmin
 
 
 async def main() -> None:
-    email = os.environ.get("PLATFORM_ADMIN_EMAIL", "").strip().lower()
+    raw_email = os.environ.get("PLATFORM_ADMIN_EMAIL", "").strip()
+    try:
+        email = str(TypeAdapter(EmailStr).validate_python(raw_email)).lower()
+    except Exception:
+        raise SystemExit("PLATFORM_ADMIN_EMAIL must be a valid email address.")
     name = os.environ.get("PLATFORM_ADMIN_NAME", "").strip()
     password = os.environ.get("PLATFORM_ADMIN_PASSWORD", "")
-    if not email or not name or len(password) < 14:
-        raise SystemExit("Set PLATFORM_ADMIN_EMAIL, PLATFORM_ADMIN_NAME and a password of at least 14 characters.")
+    if not name or len(password) < 14 or len(password.encode("utf-8")) > 72:
+        raise SystemExit("Set PLATFORM_ADMIN_NAME and a password of 14-72 UTF-8 bytes; set PLATFORM_ADMIN_EMAIL to a valid address.")
     async with async_session_factory() as session:
         exists = await session.scalar(select(PlatformAdmin.id).where(PlatformAdmin.email == email))
         if exists:
