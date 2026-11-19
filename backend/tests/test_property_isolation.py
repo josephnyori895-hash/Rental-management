@@ -237,91 +237,201 @@ async def test_unknown_property_ids_do_not_leak_other_business_records(client, b
         assert str(second.unit.id) not in res.text
 
 
-@requires_db
-async def test_rooms_never_render_foreign_lease_tenant_or_invoice(
-    client, businesses, db_session
-):
-    """Inconsistent rows: owned by business B, pointing at a property of business A.
-
-    Isolation must not rely on the data being consistent. A lease or invoice
-    that names another operator's tenant must contribute nothing to the room
-    payload, and no foreign PII may appear anywhere in the response body.
-    """
-    from datetime import date, timedelta
+async def _extra_unit(db_session, business, property_id, unit_number: str):
     from decimal import Decimal
 
-    from app.models.billing import Invoice, InvoiceStatus
-    from app.models.lease import Lease, LeaseStatus
     from app.models.property import Unit, UnitStatus
 
-    first, second = businesses
-
-    orphan = Unit(
-        business_id=first.business.id,
-        property_id=first.property.id,
-        unit_number="FOREIGN-LINK",
+    unit = Unit(
+        business_id=business.id,
+        property_id=property_id,
+        unit_number=unit_number,
         status=UnitStatus.OCCUPIED.value,
         monthly_rent=Decimal("15000"),
         is_deleted=False,
     )
-    db_session.add(orphan)
+    db_session.add(unit)
     await db_session.flush()
+    return unit
 
-    today = date.today()
-    foreign_lease = Lease(
-        business_id=second.business.id,
-        unit_id=orphan.id,
-        tenant_id=second.tenant.id,
-        property_id=first.property.id,
-        start_date=today - timedelta(days=30),
-        end_date=today + timedelta(days=335),
+
+async def _lease(db_session, *, business_id, unit, tenant_id, property_id, notes=None):
+    from datetime import date, timedelta
+    from decimal import Decimal
+
+    from app.models.lease import Lease, LeaseStatus
+
+    lease = Lease(
+        business_id=business_id,
+        unit_id=unit.id,
+        tenant_id=tenant_id,
+        property_id=property_id,
+        start_date=date.today() - timedelta(days=30),
+        end_date=date.today() + timedelta(days=335),
         rent_amount=Decimal("15000"),
         deposit_amount=Decimal("15000"),
         status=LeaseStatus.ACTIVE.value,
+        notes=notes,
     )
-    db_session.add(foreign_lease)
+    db_session.add(lease)
     await db_session.flush()
+    return lease
 
-    db_session.add(
-        Invoice(
-            business_id=second.business.id,
-            lease_id=foreign_lease.id,
-            tenant_id=second.tenant.id,
-            unit_id=orphan.id,
-            property_id=first.property.id,
-            invoice_number="BRAVO-FOREIGN-0001",
-            invoice_type="rent",
-            period_start=today.replace(day=1),
-            due_date=today,
-            amount=Decimal("15000"),
-            paid_amount=Decimal("15000"),
-            balance=Decimal("0"),
-            status=InvoiceStatus.PAID.value,
-        )
+
+async def _invoice(db_session, *, business_id, unit, tenant_id, property_id, lease_id, number):
+    from datetime import date
+    from decimal import Decimal
+
+    from app.models.billing import Invoice, InvoiceStatus
+
+    invoice = Invoice(
+        business_id=business_id,
+        lease_id=lease_id,
+        tenant_id=tenant_id,
+        unit_id=unit.id,
+        property_id=property_id,
+        invoice_number=number,
+        invoice_type="rent",
+        period_start=date.today().replace(day=1),
+        due_date=date.today(),
+        amount=Decimal("15000"),
+        paid_amount=Decimal("15000"),
+        balance=Decimal("0"),
+        status=InvoiceStatus.PAID.value,
     )
+    db_session.add(invoice)
     await db_session.flush()
+    return invoice
+
+
+@requires_db
+async def test_rooms_ignore_a_lease_owned_by_another_business(
+    client, businesses, db_session
+):
+    """The lease itself is foreign, so it is excluded before any join."""
+    first, second = businesses
+
+    unit = await _extra_unit(db_session, first.business, first.property.id, "FOREIGN-LEASE")
+    await _lease(
+        db_session,
+        business_id=second.business.id,
+        unit=unit,
+        tenant_id=second.tenant.id,
+        property_id=first.property.id,
+        notes="SENSITIVE-NOTE-FOREIGN-LEASE",
+    )
 
     res = await client.get(
         f"/api/v1/properties/{first.property.id}/rooms", headers=first.bearer
     )
     assert res.status_code == 200, res.text
-    rows = {row["unit_number"]: row for row in res.json()}
-    assert "FOREIGN-LINK" in rows
+    room = {row["unit_number"]: row for row in res.json()}["FOREIGN-LEASE"]
 
-    foreign = rows["FOREIGN-LINK"]
-    assert foreign["tenant_id"] is None
-    assert foreign["tenant_name"] is None
-    assert foreign["tenant_phone"] is None
-    assert foreign["invoice_status"] is None
-    assert foreign["invoice_balance"] == 0.0
-    assert foreign["total_paid"] == 0.0
+    assert room["tenant_id"] is None
+    assert room["tenant_name"] is None
+    assert room["tenant_phone"] is None
+    assert room["lease_start"] is None
+    assert room["lease_end"] is None
+    assert room["duration_months"] is None
+    assert room["condition_notes"] is None
+
+    assert second.tenant.full_name not in res.text
+    assert second.tenant.phone not in res.text
+    assert "SENSITIVE-NOTE-FOREIGN-LEASE" not in res.text
+
+
+@requires_db
+async def test_rooms_withhold_lease_details_when_the_tenant_is_foreign(
+    client, businesses, db_session
+):
+    """Lease belongs to A, tenant belongs to B: the tenant guard must fire,
+    and no lease-derived value may be published alongside it."""
+    first, second = businesses
+
+    unit = await _extra_unit(db_session, first.business, first.property.id, "FOREIGN-TENANT")
+    await _lease(
+        db_session,
+        business_id=first.business.id,
+        unit=unit,
+        tenant_id=second.tenant.id,
+        property_id=first.property.id,
+        notes="SENSITIVE-NOTE-FOREIGN-TENANT",
+    )
+
+    res = await client.get(
+        f"/api/v1/properties/{first.property.id}/rooms", headers=first.bearer
+    )
+    assert res.status_code == 200, res.text
+    room = {row["unit_number"]: row for row in res.json()}["FOREIGN-TENANT"]
+
+    assert room["tenant_id"] is None
+    assert room["tenant_name"] is None
+    assert room["tenant_phone"] is None
+    assert room["lease_start"] is None
+    assert room["lease_end"] is None
+    assert room["duration_months"] is None
+    assert room["condition_notes"] is None
 
     body = res.text
     assert str(second.tenant.id) not in body
     assert second.tenant.full_name not in body
     assert second.tenant.phone not in body
-    assert "BRAVO-FOREIGN-0001" not in body
+    assert "SENSITIVE-NOTE-FOREIGN-TENANT" not in body
 
-    own = rows[first.unit.unit_number]
-    assert own["tenant_name"] == first.tenant.full_name
-    assert own["invoice_status"] is not None
+
+@requires_db
+async def test_rooms_ignore_an_invoice_owned_by_another_business(
+    client, businesses, db_session
+):
+    """Valid lease, foreign invoice: the tenant renders, the money does not."""
+    first, second = businesses
+
+    unit = await _extra_unit(db_session, first.business, first.property.id, "FOREIGN-INVOICE")
+    lease = await _lease(
+        db_session,
+        business_id=first.business.id,
+        unit=unit,
+        tenant_id=first.tenant.id,
+        property_id=first.property.id,
+    )
+    await _invoice(
+        db_session,
+        business_id=second.business.id,
+        unit=unit,
+        tenant_id=second.tenant.id,
+        property_id=first.property.id,
+        lease_id=lease.id,
+        number="BRAVO-FOREIGN-0001",
+    )
+
+    res = await client.get(
+        f"/api/v1/properties/{first.property.id}/rooms", headers=first.bearer
+    )
+    assert res.status_code == 200, res.text
+    room = {row["unit_number"]: row for row in res.json()}["FOREIGN-INVOICE"]
+
+    assert room["tenant_name"] == first.tenant.full_name
+    assert room["invoice_status"] is None
+    assert room["invoice_balance"] == 0.0
+    assert room["total_paid"] == 0.0
+    assert "BRAVO-FOREIGN-0001" not in res.text
+
+
+@requires_db
+async def test_rooms_render_a_correctly_linked_lease(client, businesses):
+    """Positive control: the guard must not blank legitimate data."""
+    first, _ = businesses
+
+    res = await client.get(
+        f"/api/v1/properties/{first.property.id}/rooms", headers=first.bearer
+    )
+    assert res.status_code == 200, res.text
+    room = {row["unit_number"]: row for row in res.json()}[first.unit.unit_number]
+
+    assert room["tenant_id"] == str(first.tenant.id)
+    assert room["tenant_name"] == first.tenant.full_name
+    assert room["tenant_phone"]
+    assert room["lease_start"] is not None
+    assert room["lease_end"] is not None
+    assert room["duration_months"] is not None
+    assert room["invoice_status"] is not None

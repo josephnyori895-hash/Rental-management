@@ -53,16 +53,17 @@ step() {
 echo "verify: $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo 'no-git')"
 echo
 
-# ── Test database must exist, not be skipped ─────────────────────────
-if (cd "$ROOT/backend" && "$PY" -c "
+# ── Test database must exist, not be skipped, and be provably scratch ──
+if DB_REPORT="$(cd "$ROOT/backend" && "$PY" -c "
 import sys
 import tests.conftest as c
+print(c.TEST_DATABASE_IDENTITY)
 sys.exit(0 if c.DB_AVAILABLE else 1)
-") >"$WORK/db.log" 2>&1; then
-  row "test database" "reachable"
+" 2>"$WORK/db.log")"; then
+  row "test database" "reachable — $DB_REPORT"
 else
-  row "test database" "UNREACHABLE — gate fails"
-  echo "      Set TEST_DATABASE_URL (or DATABASE_URL) to a scratch database."
+  row "test database" "REFUSED/UNREACHABLE — gate fails"
+  sed 's/^/      /' "$WORK/db.log" | tail -8
   FAILED=1
 fi
 

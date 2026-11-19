@@ -129,6 +129,7 @@ async def list_rooms(
     green=paid, blue=overpaid, slate=vacant).
     """
     await owned_property(property_id, user, session)
+    today = date.today()
     units = (
         await session.scalars(
             select(Unit).where(
@@ -173,16 +174,21 @@ async def list_rooms(
             tenant = await session.get(Tenant, lease.tenant_id)
             if tenant is not None and tenant.business_id != user.business_id:
                 tenant = None
-            room["tenant_id"] = str(tenant.id) if tenant else None
-            room["tenant_name"] = tenant.full_name if tenant else None
-            room["tenant_phone"] = tenant.phone or tenant.mpesa_phone if tenant else None
-            room["lease_start"] = str(lease.start_date)
-            room["lease_end"] = str(lease.end_date) if lease.end_date else None
-            room["condition_notes"] = lease.notes
-            # duration stayed in months
-            start = lease.start_date
-            months = (date.today().year - start.year) * 12 + (date.today().month - start.month)
-            room["duration_months"] = max(months, 0)
+            # Nothing lease-derived is published unless the tenant passes the
+            # ownership check: dates, duration and free-text notes belong to
+            # whoever owns the lease, and a mismatched row must render blank
+            # rather than half-filled.
+            if tenant is not None:
+                room["tenant_id"] = str(tenant.id)
+                room["tenant_name"] = tenant.full_name
+                room["tenant_phone"] = tenant.phone or tenant.mpesa_phone
+                room["lease_start"] = str(lease.start_date)
+                room["lease_end"] = str(lease.end_date) if lease.end_date else None
+                room["condition_notes"] = lease.notes
+                # duration stayed in months
+                start = lease.start_date
+                months = (today.year - start.year) * 12 + (today.month - start.month)
+                room["duration_months"] = max(months, 0)
 
         # Latest invoice for this unit
         inv = await session.scalar(
