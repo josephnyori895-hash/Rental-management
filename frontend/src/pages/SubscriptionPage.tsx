@@ -77,7 +77,7 @@ export default function SubscriptionPage() {
     try {
       const selection = await api("/subscriptions/select", "POST", { package_code: packageCode, addon_codes: addons });
       const invoice = await api(`/subscriptions/${selection.subscription_id}/invoice`, "POST");
-      setNotice(`Subscription invoice ${invoice.invoice_number} has been created. It is payable to Rental OS; no payment has been taken and your plan is not active yet.`);
+      setNotice(`Subscription invoice ${invoice.invoice_number} has been created. Payment integration is not enabled yet; no payment has been taken and your plan is not active.`);
       setQuote(null);
       await refresh();
     } catch (e: any) { setError(e.message || "Could not create subscription invoice"); }
