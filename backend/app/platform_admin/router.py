@@ -5,14 +5,15 @@ provisioned by a trusted operator through the deployment's controlled process.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select
+from sqlalchemy import desc, select
 
 from app.core.config import settings
 from app.core.ratelimit import login_limiter
 from app.core.security import create_access_token, verify_password
 from app.models.platform_admin import PlatformAdmin
+from app.models.platform_admin_event import PlatformAdminEvent
 from app.platform_admin.audit import record_platform_admin_event
 from app.platform_admin.dependencies import PlatformAdminDep, PlatformAdminSession
 
@@ -50,3 +51,29 @@ async def platform_admin_login(data: PlatformAdminLogin, session: PlatformAdminS
 async def platform_admin_me(admin: PlatformAdminDep):
     return {"id": str(admin.id), "email": admin.email, "full_name": admin.full_name,
             "is_superadmin": admin.is_superadmin}
+
+
+@router.get("/events")
+async def platform_admin_events(
+    admin: PlatformAdminDep,
+    session: PlatformAdminSession,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    if not admin.is_superadmin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Superadministrator access required")
+    events = (await session.scalars(
+        select(PlatformAdminEvent)
+        .order_by(desc(PlatformAdminEvent.created_at))
+        .limit(limit).offset(offset)
+    )).all()
+    return {
+        "events": [{
+            "id": str(event.id), "admin_email": event.email_snapshot,
+            "action": event.action, "target_type": event.target_type,
+            "target_id": event.target_id, "metadata": event.event_metadata,
+            "ip_address": event.ip_address, "user_agent": event.user_agent,
+            "created_at": event.created_at.isoformat(),
+        } for event in events],
+        "limit": limit, "offset": offset,
+    }
