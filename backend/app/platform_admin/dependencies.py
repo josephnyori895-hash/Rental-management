@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -34,7 +35,11 @@ async def get_current_platform_admin(
         raise unauthorized
     if claims.get("type") != "platform_admin_access" or claims.get("principal_type") != "platform_admin":
         raise unauthorized
-    admin = await session.get(PlatformAdmin, claims.get("sub"))
+    try:
+        admin_id = UUID(claims.get("sub"))
+    except (TypeError, ValueError):
+        raise unauthorized
+    admin = await session.get(PlatformAdmin, admin_id)
     if not admin or not admin.is_active:
         raise unauthorized
     return admin
