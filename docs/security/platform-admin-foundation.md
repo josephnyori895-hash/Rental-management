@@ -35,8 +35,7 @@ commit it, and remove it from the environment after provisioning.
 - Login rate limiting using the application's existing limiter.
 - Live database lookup on each authenticated request, including active-state
   enforcement.
-- Subscription catalogue administration now depends on this separate principal
-  rather than the non-existent `platform_admin` landlord role.
+- Subscription catalogue reads use the separate platform principal; catalogue and price mutations require the superadmin flag rather than the non-existent `platform_admin` landlord role.
 - Focused tests for token/principal separation and inactive accounts.
 
 ## Additional subscription foundation
