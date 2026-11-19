@@ -186,11 +186,22 @@ async def mark_paid_by_checkout(
     return await apply_payment(session, str(inv.id), amount, "mpesa", reference, mpesa_raw=mpesa_raw)
 
 
-async def stk_push(session: AsyncSession, invoice_id: str, phone: str) -> str:
-    """Trigger an M-Pesa STK push to the tenant's phone. Returns CheckoutRequestID."""
-    inv = await session.get(Invoice, uuid.UUID(str(invoice_id)))
+async def stk_push(
+    session: AsyncSession, invoice_id: str, phone: str, business_id=None
+) -> str:
+    """Trigger an M-Pesa STK push for an invoice owned by the requesting business."""
+    try:
+        parsed_invoice_id = uuid.UUID(str(invoice_id))
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise ValueError("Invoice not found") from exc
+    invoice_query = select(Invoice).where(Invoice.id == parsed_invoice_id)
+    if business_id is not None:
+        invoice_query = invoice_query.where(Invoice.business_id == business_id)
+    inv = await session.scalar(invoice_query)
     if not inv:
         raise ValueError("Invoice not found")
+    if Decimal(str(inv.balance or 0)) <= 0:
+        raise ValueError("Invoice already settled")
 
     cfg = settings
     if not (
