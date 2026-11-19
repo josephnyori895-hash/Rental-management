@@ -7,13 +7,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 
 from app.core.config import settings
 from app.core.ratelimit import login_limiter
 from app.core.security import create_access_token, verify_password
 from app.models.platform_admin import PlatformAdmin
 from app.models.platform_admin_event import PlatformAdminEvent
+from app.models.business import Business
+from app.models.subscriptions import BusinessSubscription, SubscriptionInvoice, SubscriptionPayment
 from app.platform_admin.audit import record_platform_admin_event
 from app.platform_admin.dependencies import PlatformAdminDep, PlatformAdminSession
 
@@ -77,3 +79,91 @@ async def platform_admin_events(
         } for event in events],
         "limit": limit, "offset": offset,
     }
+
+
+
+@router.get("/overview")
+async def platform_admin_overview(admin: PlatformAdminDep, session: PlatformAdminSession):
+    paid_totals = (await session.execute(
+        select(SubscriptionPayment.currency, func.sum(SubscriptionPayment.amount))
+        .where(SubscriptionPayment.status == "succeeded")
+        .group_by(SubscriptionPayment.currency)
+    )).all()
+    return {
+        "businesses": int(await session.scalar(select(func.count(Business.id))) or 0),
+        "active_subscriptions": int(await session.scalar(select(func.count(BusinessSubscription.id)).where(BusinessSubscription.status == "active")) or 0),
+        "trialing_subscriptions": int(await session.scalar(select(func.count(BusinessSubscription.id)).where(BusinessSubscription.status == "trialing")) or 0),
+        "open_subscription_invoices": int(await session.scalar(select(func.count(SubscriptionInvoice.id)).where(SubscriptionInvoice.status == "open")) or 0),
+        "platform_subscription_receipts": [{
+            "currency": currency, "amount": str(amount or 0),
+        } for currency, amount in paid_totals],
+    }
+
+
+@router.get("/subscriptions")
+async def platform_admin_subscriptions(
+    admin: PlatformAdminDep,
+    session: PlatformAdminSession,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    rows = (await session.execute(
+        select(BusinessSubscription, Business.name, Business.slug)
+        .join(Business, Business.id == BusinessSubscription.business_id)
+        .order_by(desc(BusinessSubscription.created_at))
+        .limit(limit).offset(offset)
+    )).all()
+    return {"subscriptions": [{
+        "id": str(sub.id), "business_id": str(sub.business_id),
+        "business_name": name, "business_slug": slug,
+        "status": sub.status, "currency": sub.currency,
+        "billing_interval": sub.billing_interval,
+        "starts_at": sub.starts_at.isoformat() if sub.starts_at else None,
+        "current_period_end": sub.current_period_end.isoformat() if sub.current_period_end else None,
+    } for sub, name, slug in rows], "limit": limit, "offset": offset}
+
+
+@router.get("/invoices")
+async def platform_admin_invoices(
+    admin: PlatformAdminDep,
+    session: PlatformAdminSession,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    rows = (await session.execute(
+        select(SubscriptionInvoice, Business.name, Business.slug)
+        .join(Business, Business.id == SubscriptionInvoice.business_id)
+        .order_by(desc(SubscriptionInvoice.created_at))
+        .limit(limit).offset(offset)
+    )).all()
+    return {"invoices": [{
+        "id": str(invoice.id), "invoice_number": invoice.invoice_number,
+        "business_name": name, "business_slug": slug,
+        "status": invoice.status, "currency": invoice.currency,
+        "total": str(invoice.total),
+        "due_at": invoice.due_at.isoformat() if invoice.due_at else None,
+        "paid_at": invoice.paid_at.isoformat() if invoice.paid_at else None,
+    } for invoice, name, slug in rows], "limit": limit, "offset": offset}
+
+
+@router.get("/payments")
+async def platform_admin_payments(
+    admin: PlatformAdminDep,
+    session: PlatformAdminSession,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    rows = (await session.execute(
+        select(SubscriptionPayment, Business.name, Business.slug)
+        .join(Business, Business.id == SubscriptionPayment.business_id)
+        .order_by(desc(SubscriptionPayment.created_at))
+        .limit(limit).offset(offset)
+    )).all()
+    return {"payments": [{
+        "id": str(payment.id), "business_name": name, "business_slug": slug,
+        "invoice_id": str(payment.invoice_id), "provider": payment.provider,
+        "reference_suffix": payment.provider_reference[-4:],
+        "status": payment.status, "currency": payment.currency,
+        "amount": str(payment.amount),
+        "received_at": payment.received_at.isoformat() if payment.received_at else None,
+    } for payment, name, slug in rows], "limit": limit, "offset": offset}
