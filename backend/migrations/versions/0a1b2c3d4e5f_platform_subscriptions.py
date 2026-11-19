@@ -89,6 +89,9 @@ def upgrade() -> None:
         sa.Column("item_name_snapshot", sa.String(160), nullable=False),
         sa.Column("quantity", sa.Integer(), nullable=False),
         sa.Column("billing_interval_snapshot", sa.String(16), nullable=False, server_default="monthly"),
+        sa.Column("billable_units_snapshot", sa.Integer(), nullable=False),
+        sa.Column("included_units_snapshot", sa.Integer(), nullable=False),
+        sa.Column("per_unit_amount_snapshot", sa.Numeric(12, 2), nullable=False),
         sa.Column("unit_amount_snapshot", sa.Numeric(12, 2), nullable=False),
         sa.Column("total_amount_snapshot", sa.Numeric(12, 2), nullable=False),
         sa.Column("features_snapshot", sa.JSON(), nullable=False),
@@ -161,6 +164,7 @@ def upgrade() -> None:
     op.create_check_constraint("valid_billing_interval", "business_subscriptions", "billing_interval IN ('monthly', 'quarterly', 'annual')")
     op.create_check_constraint("quantity_positive", "business_subscription_items", "quantity >= 1")
     op.create_check_constraint("valid_billing_interval", "business_subscription_items", "billing_interval_snapshot IN ('monthly', 'quarterly', 'annual', 'one_time')")
+    op.create_check_constraint("unit_snapshot_nonnegative", "business_subscription_items", "billable_units_snapshot >= 0 AND included_units_snapshot >= 0 AND per_unit_amount_snapshot >= 0")
     op.create_check_constraint("amounts_nonnegative", "business_subscription_items", "unit_amount_snapshot >= 0 AND total_amount_snapshot >= 0")
     op.create_check_constraint("amounts_nonnegative", "subscription_invoices", "subtotal >= 0 AND total >= 0")
     op.create_check_constraint("valid_status", "subscription_invoices", "status IN ('draft', 'open', 'paid', 'void', 'past_due')")
