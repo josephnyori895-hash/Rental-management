@@ -179,8 +179,8 @@ def upgrade() -> None:
             if name == "mpesa_env":
                 op.alter_column("businesses", name, server_default=None)
             _record("column", f"businesses.{name}")
-    # Keep a server default for mpesa_env so older application writers that
-    # omit the field remain compatible on migrated databases.
+    # The temporary server default is removed after backfilling existing rows,
+    # matching the model metadata and avoiding Alembic default drift.
 
 
 def downgrade() -> None:
