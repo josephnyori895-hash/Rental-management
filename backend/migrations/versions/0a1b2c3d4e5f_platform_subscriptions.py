@@ -116,6 +116,23 @@ def upgrade() -> None:
     op.create_index("ix_subscription_payments_invoice_id", "subscription_payments", ["invoice_id"])
 
 
+
+    # Keep invariants in PostgreSQL as well as at the API boundary.
+    op.create_check_constraint("valid_item_type", "subscription_catalog_items", "item_type IN ('package', 'addon')")
+    op.create_check_constraint("valid_pricing_model", "subscription_catalog_items", "pricing_model IN ('flat_recurring', 'per_billable_unit', 'one_time')")
+    op.create_check_constraint("amount_nonnegative", "subscription_price_versions", "amount >= 0")
+    op.create_check_constraint("per_unit_amount_nonnegative", "subscription_price_versions", "per_unit_amount >= 0")
+    op.create_check_constraint("included_units_nonnegative", "subscription_price_versions", "included_units >= 0")
+    op.create_check_constraint("valid_effective_period", "subscription_price_versions", "effective_to IS NULL OR effective_to > effective_from")
+    op.create_check_constraint("valid_status", "business_subscriptions", "status IN ('draft', 'trialing', 'active', 'past_due', 'cancelled', 'expired')")
+    op.create_check_constraint("quantity_positive", "business_subscription_items", "quantity >= 1")
+    op.create_check_constraint("amounts_nonnegative", "business_subscription_items", "unit_amount_snapshot >= 0 AND total_amount_snapshot >= 0")
+    op.create_check_constraint("amounts_nonnegative", "subscription_invoices", "subtotal >= 0 AND total >= 0")
+    op.create_check_constraint("valid_status", "subscription_invoices", "status IN ('draft', 'open', 'paid', 'void', 'past_due')")
+    op.create_check_constraint("amount_positive", "subscription_payments", "amount > 0")
+    op.create_check_constraint("valid_status", "subscription_payments", "status IN ('pending', 'succeeded', 'failed', 'refunded')")
+
+
 def downgrade() -> None:
     op.drop_table("subscription_payments")
     op.drop_table("subscription_invoices")
