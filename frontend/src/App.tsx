@@ -171,7 +171,7 @@ export default function App() {
     })();
   }, []);
 
-  if ((window.location.pathname.replace(/\\/+$/, "") || "/") === "/platform-admin") {
+  if ((window.location.pathname.replace(/\/+$/, "") || "/") === "/platform-admin") {
     return <PlatformAdminConsole />;
   }
 
