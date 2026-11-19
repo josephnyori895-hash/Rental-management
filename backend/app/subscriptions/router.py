@@ -1,8 +1,8 @@
-"""Authenticated business-facing Rental OS subscription endpoints.
+"""Business-scoped Rental OS subscription selection, invoices and history.
 
-Catalogue changes are platform-admin operations; this initial slice exposes
-read/quote/select only. Selection creates a draft and never charges a card,
-starts an STK push, or alters landlord rent invoices/payments.
+Catalogue administration is reserved for the separate platform-admin principal.
+Selection and invoice issuance never collect payment or alter landlord rent
+invoices, payment credentials, or settlement destinations.
 """
 from __future__ import annotations
 
