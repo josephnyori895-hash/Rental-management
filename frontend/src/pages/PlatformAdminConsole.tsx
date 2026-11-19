@@ -32,7 +32,7 @@ export default function PlatformAdminConsole() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [newItem, setNewItem] = useState({ code: "", name: "", item_type: "package", pricing_model: "flat_recurring", description: "", features: "{\n  \n}" });
-  const [price, setPrice] = useState({ currency: "KES", amount: "0.00", included_units: "0", per_unit_amount: "0.00", effective_from: new Date(Date.now() + 60000).toISOString().slice(0, 16) });
+  const [price, setPrice] = useState({ currency: "KES", billing_interval: "monthly", amount: "0.00", included_units: "0", per_unit_amount: "0.00", effective_from: new Date(Date.now() + 60000).toISOString().slice(0, 16) });
 
   const selected = useMemo(() => items.find((item) => item.id === selectedId), [items, selectedId]);
 
@@ -96,7 +96,7 @@ export default function PlatformAdminConsole() {
     setBusy(true); setError(""); setNotice("");
     try {
       await request(`/subscriptions/admin/catalogue/${selectedId}/prices`, token, "POST", {
-        currency: price.currency, amount: price.amount,
+        currency: price.currency, billing_interval: selected?.pricing_model === "one_time" ? "one_time" : price.billing_interval, amount: price.amount,
         included_units: Number(price.included_units), per_unit_amount: price.per_unit_amount,
         effective_from: new Date(price.effective_from).toISOString(),
       });
@@ -174,6 +174,7 @@ export default function PlatformAdminConsole() {
               <div className="mt-3 grid grid-cols-2 gap-3">
                 <label className="text-xs text-slate-400">Currency<input required maxLength={3} value={price.currency} onChange={(e) => setPrice({ ...price, currency: e.target.value.toUpperCase() })} className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
                 <label className="text-xs text-slate-400">Base amount<input required type="number" min="0" step="0.01" value={price.amount} onChange={(e) => setPrice({ ...price, amount: e.target.value })} className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
+                {selected?.pricing_model !== "one_time" && <label className="text-xs text-slate-400">Billing interval<select value={price.billing_interval} onChange={(e) => setPrice({ ...price, billing_interval: e.target.value })} className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white"><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="annual">Annual</option></select></label>}
                 {selected?.pricing_model === "per_billable_unit" && <><label className="text-xs text-slate-400">Included units<input type="number" min="0" value={price.included_units} onChange={(e) => setPrice({ ...price, included_units: e.target.value })} className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white" /></label><label className="text-xs text-slate-400">Per extra unit<input type="number" min="0" step="0.01" value={price.per_unit_amount} onChange={(e) => setPrice({ ...price, per_unit_amount: e.target.value })} className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white" /></label></>}
                 <label className="col-span-2 text-xs text-slate-400">Effective from<input required type="datetime-local" value={price.effective_from} onChange={(e) => setPrice({ ...price, effective_from: e.target.value })} className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
               </div>
