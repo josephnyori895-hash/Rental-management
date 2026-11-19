@@ -87,7 +87,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const role = token ? decodeRole() : null;
-  const isPlatformAdminPath = (window.location.pathname.replace(/\\/+$/, "") || "/") === "/platform-admin";
+  const isPlatformAdminPath = (window.location.pathname.replace(/\/+$/, "") || "/") === "/platform-admin";
 
   useEffect(() => {
     if (isPlatformAdminPath) return;
