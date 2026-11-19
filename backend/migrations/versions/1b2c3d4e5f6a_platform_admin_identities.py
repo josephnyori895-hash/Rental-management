@@ -28,9 +28,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("email", name="uq_platform_admin_email"),
     )
-    op.create_index("ix_platform_admins_email", "platform_admins", ["email"], unique=True)
 
 
 def downgrade() -> None:
-    op.drop_index("ix_platform_admins_email", table_name="platform_admins")
     op.drop_table("platform_admins")
