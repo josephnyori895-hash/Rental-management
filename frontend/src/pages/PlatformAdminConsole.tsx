@@ -177,7 +177,7 @@ export default function PlatformAdminConsole() {
             <div className="space-y-3">
               {items.map((item) => <button key={item.id} onClick={() => setSelectedId(item.id)} className={`w-full rounded-xl border p-4 text-left transition ${selectedId === item.id ? "border-emerald-400/60 bg-emerald-400/10" : "border-white/10 bg-slate-950/50 hover:border-white/20"}`}>
                 <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{item.name}</span><span className="rounded-full bg-white/5 px-2 py-1 text-[10px] uppercase tracking-wide text-slate-400">{item.item_type} · {item.pricing_model}</span></div>
-                <p className="mt-1 text-xs text-slate-500">{item.code} · {item.amount ? `${item.currency} ${item.amount}` : "Price not configured"}</p>
+                <p className="mt-1 text-xs text-slate-500">{item.code} · {item.amount ? `${item.currency} ${item.amount} / ${item.billing_interval}` : "Price not configured"}</p>
               </button>)}
               {!items.length && <p className="rounded-xl border border-dashed border-white/10 p-6 text-sm text-slate-500">No catalogue items yet. Create your Basic package first.</p>}
             </div>
