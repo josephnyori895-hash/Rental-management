@@ -1,5 +1,5 @@
 """
-Rental OS — Property Schemas
+RENTAL OS — Property Schemas
 """
 
 from __future__ import annotations
@@ -10,12 +10,33 @@ from uuid import UUID
 from pydantic import BaseModel, Field, model_validator
 
 
+class PropertyCreate(BaseModel):
+    name: str
+    address: str | None = None
+    property_type: Literal[
+        "hostel", "apartment", "building", "house", "commercial"
+    ] = "hostel"
+    description: str | None = None
+
+
+class UnitCreate(BaseModel):
+    unit_number: str
+    unit_type: Literal[
+        "room", "bedspace", "studio", "1_bedroom", "2_bedroom", "shop"
+    ] = "room"
+    monthly_rent: float
+    deposit_amount: float = 0
+    max_occupants: int = 1
+    description: str | None = None
+
+
 class PropertyOut(BaseModel):
     id: UUID
     name: str
     address: Optional[str] = None
     property_type: str
     description: Optional[str] = None
+    manager_id: UUID | None = None
     layout_config: dict | None = None
 
     model_config = {"from_attributes": True}
@@ -38,7 +59,7 @@ class UnitRoomOut(BaseModel):
     invoice_status: str | None = None
     invoice_balance: float = 0.0
     total_paid: float = 0.0
-    rent_light: str = "vacant"
+    rent_light: str = "vacant"  # vacant|unpaid|partial|paid|overpaid
 
     model_config = {"from_attributes": True}
 
@@ -115,3 +136,8 @@ class PropertyLayoutConfig(BaseModel):
 
 class PropertyLayoutUpdate(BaseModel):
     layout_config: PropertyLayoutConfig
+
+
+class PropertyLayoutOut(BaseModel):
+    property_id: UUID
+    layout_config: PropertyLayoutConfig | None = None

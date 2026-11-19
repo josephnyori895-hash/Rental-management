@@ -12,9 +12,14 @@ name, or set explicitly:
 
     TEST_DATABASE_URL=postgresql+asyncpg://imani:imani@localhost:5432/rental_test
 
-If that database is unreachable, every test needing it is skipped — `pytest`
-still passes on a machine with no PostgreSQL, which has been this suite's
-contract from the start.
+The schema reset drops and recreates `public`, so the target is checked before
+any fixture runs: the database name must end in `_test`, and the resolved
+target must not be the database named by `DATABASE_URL`. Anything that cannot
+be positively identified as scratch is refused rather than guessed at.
+
+If that database is unreachable, database-backed tests skip so the suite still
+runs on a machine without PostgreSQL. That skip is not a pass: `scripts/verify.sh`
+fails the release gate when the database is missing or when anything skipped.
 """
 
 from __future__ import annotations
@@ -77,7 +82,124 @@ TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or _derive_test_url()
 
 # `app.core.config` reads DATABASE_URL at import time, so redirect it before
 # anything imports the app. Without this the tests would write to the
-# development database.
+# development database. Capture what it was first: the reset below is
+# destructive and must not be able to land on that database.
+#
+# The marker is deliberate. pytest can import this module twice (as `conftest`
+# and as `tests.conftest`), and the first import rewrites DATABASE_URL, so the
+# second would otherwise capture the scratch URL as production and refuse its
+# own target.
+PRODUCTION_DATABASE_URL = (
+    os.environ.get("RENTAL_OS_PRODUCTION_DATABASE_URL")
+    or os.environ.get("DATABASE_URL")
+    or _dotenv_value("DATABASE_URL")
+    or ""
+)
+if PRODUCTION_DATABASE_URL and not os.environ.get("RENTAL_OS_PRODUCTION_DATABASE_URL"):
+    os.environ["RENTAL_OS_PRODUCTION_DATABASE_URL"] = PRODUCTION_DATABASE_URL
+
+
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+DEFAULT_POSTGRES_PORT = 5432
+
+
+def _normalise_host(host: str | None) -> str:
+    """Collapse the spellings that reach the same server.
+
+    `localhost`, `127.0.0.1`, `::1` and the wildcard bind all mean this
+    machine; a missing host means the same. Anything else is compared
+    lower-cased and without IPv6 brackets.
+    """
+    if not host:
+        return "loopback"
+    cleaned = host.strip().lower().strip("[]")
+    if cleaned in LOOPBACK_HOSTS:
+        return "loopback"
+    return cleaned
+
+
+def _resolved_target(url: str) -> tuple[str, int, str]:
+    """(host, port, database) with defaults filled in and hosts normalised."""
+    from sqlalchemy.engine import make_url
+
+    parsed = make_url(url)
+    return (
+        _normalise_host(parsed.host),
+        int(parsed.port or DEFAULT_POSTGRES_PORT),
+        (parsed.database or "").lower(),
+    )
+
+
+def _same_target(url_a: str, url_b: str) -> bool:
+    return _resolved_target(url_a) == _resolved_target(url_b)
+
+
+def _url_identity(url: str) -> str:
+    """`host:port/database` — never credentials, never the password.
+
+    Display only: this keeps the host as written, so the gate output shows what
+    an operator recognises. Comparisons use `_resolved_target` instead.
+    """
+    from sqlalchemy.engine import make_url
+
+    parsed = make_url(url)
+    return (
+        f"{parsed.host or 'localhost'}:{parsed.port or DEFAULT_POSTGRES_PORT}"
+        f"/{parsed.database or '?'}"
+    )
+
+
+def _require_scratch_database(url: str, production_url: str | None = None) -> None:
+    """Refuse anything that is not positively a disposable scratch database.
+
+    The session fixture runs `DROP SCHEMA public CASCADE`, so a wrong URL here
+    destroys real data. Failing to start is the correct outcome when the target
+    cannot be identified with certainty.
+
+    Two separate refusals, deliberately redundant:
+      1. the database name may not equal the production database name, whatever
+         host is written — `localhost` and `127.0.0.1` are the same server, and
+         a same-named database on another host is still too close to risk;
+      2. the fully resolved target may not equal production after default ports
+         and host spellings are normalised.
+    """
+    from sqlalchemy.engine import make_url
+
+    production_url = PRODUCTION_DATABASE_URL if production_url is None else production_url
+
+    parsed = make_url(url)
+    name = parsed.database or ""
+    if not name.lower().endswith("_test"):
+        raise RuntimeError(
+            "refusing to run tests against "
+            f"{_url_identity(url)}: the database name must end with '_test'. "
+            "This suite runs DROP SCHEMA public CASCADE."
+        )
+
+    if not production_url:
+        raise RuntimeError(
+            "refusing to run tests: DATABASE_URL is not set, so the scratch "
+            f"target {_url_identity(url)} cannot be compared against production."
+        )
+
+    production_name = (make_url(production_url).database or "").lower()
+    if name.lower() == production_name:
+        raise RuntimeError(
+            "refusing to run tests: the scratch database is named like the "
+            f"production database ({name}) — {_url_identity(url)}"
+        )
+
+    if _same_target(url, production_url):
+        raise RuntimeError(
+            "refusing to run tests: TEST_DATABASE_URL resolves to the same "
+            f"database as DATABASE_URL ({_url_identity(url)})"
+        )
+
+
+TEST_DATABASE_IDENTITY = _url_identity(TEST_DATABASE_URL) if TEST_DATABASE_URL else ""
+if TEST_DATABASE_URL:
+    _require_scratch_database(TEST_DATABASE_URL)
+
 if TEST_DATABASE_URL:
     os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
