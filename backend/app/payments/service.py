@@ -99,8 +99,6 @@ async def apply_payment(
     current_balance = Decimal(str(inv.balance or 0)).quantize(Decimal("0.01"))
     if current_balance <= 0:
         return inv
-    if amt > current_balance:
-        raise ValueError("Payment amount exceeds the outstanding invoice balance")
 
     # Provider callbacks are retried. Checking after acquiring the invoice lock
     # serializes duplicate callbacks for the same invoice and prevents a repeated
