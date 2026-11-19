@@ -11,7 +11,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import (
-    Boolean, DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, Text,
+    Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -23,6 +23,10 @@ from app.models.base import TimestampMixin, UUIDMixin, utcnow
 
 class SubscriptionCatalogItem(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "subscription_catalog_items"
+    __table_args__ = (
+        CheckConstraint("item_type IN ('package', 'addon')", name="valid_item_type"),
+        CheckConstraint("pricing_model IN ('flat_recurring', 'per_billable_unit', 'one_time')", name="valid_pricing_model"),
+    )
 
     code: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
@@ -38,6 +42,10 @@ class SubscriptionPriceVersion(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "subscription_price_versions"
     __table_args__ = (
         Index("ix_subscription_price_item_effective", "catalog_item_id", "effective_from", "effective_to"),
+        CheckConstraint("amount >= 0", name="amount_nonnegative"),
+        CheckConstraint("per_unit_amount >= 0", name="per_unit_amount_nonnegative"),
+        CheckConstraint("included_units >= 0", name="included_units_nonnegative"),
+        CheckConstraint("effective_to IS NULL OR effective_to > effective_from", name="valid_effective_period"),
     )
 
     catalog_item_id: Mapped[UUID] = mapped_column(
@@ -57,6 +65,7 @@ class BusinessSubscription(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "business_subscriptions"
     __table_args__ = (
         Index("ix_business_subscription_status", "business_id", "status"),
+        CheckConstraint("status IN ('draft', 'trialing', 'active', 'past_due', 'cancelled', 'expired')", name="valid_status"),
     )
 
     business_id: Mapped[UUID] = mapped_column(
@@ -74,7 +83,11 @@ class BusinessSubscription(Base, UUIDMixin, TimestampMixin):
 
 class BusinessSubscriptionItem(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "business_subscription_items"
-    __table_args__ = (UniqueConstraint("subscription_id", "catalog_item_id", name="uq_subscription_item_catalog"),)
+    __table_args__ = (
+        UniqueConstraint("subscription_id", "catalog_item_id", name="uq_subscription_item_catalog"),
+        CheckConstraint("quantity >= 1", name="quantity_positive"),
+        CheckConstraint("unit_amount_snapshot >= 0 AND total_amount_snapshot >= 0", name="amounts_nonnegative"),
+    )
 
     subscription_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("business_subscriptions.id", ondelete="CASCADE"),
@@ -99,7 +112,11 @@ class BusinessSubscriptionItem(Base, UUIDMixin, TimestampMixin):
 class SubscriptionInvoice(Base, UUIDMixin, TimestampMixin):
     """Rental OS subscription billing only; never used for tenant rent."""
     __tablename__ = "subscription_invoices"
-    __table_args__ = (UniqueConstraint("business_id", "invoice_number", name="uq_subscription_invoice_number"),)
+    __table_args__ = (
+        UniqueConstraint("business_id", "invoice_number", name="uq_subscription_invoice_number"),
+        CheckConstraint("subtotal >= 0 AND total >= 0", name="amounts_nonnegative"),
+        CheckConstraint("status IN ('draft', 'open', 'paid', 'void', 'past_due')", name="valid_status"),
+    )
 
     business_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("businesses.id", ondelete="CASCADE"),
@@ -123,6 +140,8 @@ class SubscriptionPayment(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "subscription_payments"
     __table_args__ = (
         UniqueConstraint("provider", "provider_reference", name="uq_subscription_payment_provider_ref"),
+        CheckConstraint("amount > 0", name="amount_positive"),
+        CheckConstraint("status IN ('pending', 'succeeded', 'failed', 'refunded')", name="valid_status"),
     )
 
     business_id: Mapped[UUID] = mapped_column(
