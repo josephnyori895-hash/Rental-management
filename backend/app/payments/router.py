@@ -390,7 +390,10 @@ async def mpesa_callback(payload: dict, request: Request, session: SessionDep):
                 **meta,
             }
 
-            await service.mark_paid_by_checkout(session, cid, amount, receipt, mpesa_raw=mpesa_raw)
+            provider_reference = receipt or f"stk:{cid}"
+            await service.mark_paid_by_checkout(
+                session, cid, amount, provider_reference, mpesa_raw=mpesa_raw
+            )
     except Exception:
         # Always acknowledge Safaricom so it stops retrying.
         pass
