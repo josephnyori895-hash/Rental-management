@@ -43,7 +43,8 @@ commit it, and remove it from the environment after provisioning.
 
 The subscription layer now records billing intervals, immutable line snapshots,
 owner-issued Rental OS subscription invoices, business-scoped invoice reads,
-and append-only lifecycle events. A verified-payment settlement service exists
+append-only lifecycle events, and end-of-period cancellation requests processed
+by an hourly catch-up scheduler. A verified-payment settlement service exists
 for a future Rental OS provider webhook adapter; it is not exposed as a public
 endpoint and no provider credentials or checkout integration are configured.
 A successful verified settlement is designed to activate only the referenced
