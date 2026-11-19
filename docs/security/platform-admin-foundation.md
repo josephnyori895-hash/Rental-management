@@ -39,6 +39,17 @@ commit it, and remove it from the environment after provisioning.
   rather than the non-existent `platform_admin` landlord role.
 - Focused tests for token/principal separation and inactive accounts.
 
+## Additional subscription foundation
+
+The subscription layer now records billing intervals, immutable line snapshots,
+owner-issued Rental OS subscription invoices, business-scoped invoice reads,
+and append-only lifecycle events. A verified-payment settlement service exists
+for a future Rental OS provider webhook adapter; it is not exposed as a public
+endpoint and no provider credentials or checkout integration are configured.
+A successful verified settlement is designed to activate only the referenced
+platform subscription invoice and subscription. It never updates landlord rent
+invoices or landlord payment settings.
+
 ## Not yet production-ready
 
 This is a foundation, not a complete admin console or full platform security
@@ -46,8 +57,7 @@ program. Before enabling platform administration in production, add and verify:
 
 1. MFA or passkey enforcement and step-up authentication for billing/catalogue
    changes.
-2. Append-only platform audit events for logins, failed logins, catalogue and
-   price changes, subscription overrides, refunds and administrator lifecycle.
+2. Extend the initial append-only platform audit trail to failed logins, subscription overrides, refunds and administrator lifecycle.
 3. Explicit least-privilege permissions (support, billing, catalogue, security)
    rather than granting every administrator every capability.
 4. Invitation/rotation/recovery workflows with two-person approval for
