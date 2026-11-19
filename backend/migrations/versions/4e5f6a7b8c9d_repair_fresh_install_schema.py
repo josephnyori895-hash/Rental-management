@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision: str = "4e5f6a7b8c9d"
-down_revision: Union[str, None] = "0a1b2c3d4e5f"
+revision: str = '4e5f6a7b8c9d'
+down_revision: Union[str, None] = '0a1b2c3d4e5f'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -60,6 +60,8 @@ def upgrade() -> None:
             sa.PrimaryKeyConstraint("id"),
         )
         op.create_index("ix_chart_of_accounts_business_id", "chart_of_accounts", ["business_id"])
+        op.create_index("ix_chart_of_accounts_id", "chart_of_accounts", ["id"])
+        op.create_index("ix_chart_of_accounts_created_at", "chart_of_accounts", ["created_at"])
         _record("table", "chart_of_accounts")
 
     existing = set(_inspector().get_table_names())
@@ -86,6 +88,8 @@ def upgrade() -> None:
         op.create_index("ix_expenses_business_id", "expenses", ["business_id"])
         op.create_index("ix_expenses_property_id", "expenses", ["property_id"])
         op.create_index("ix_expenses_category", "expenses", ["category"])
+        op.create_index("ix_expenses_id", "expenses", ["id"])
+        op.create_index("ix_expenses_created_at", "expenses", ["created_at"])
         _record("table", "expenses")
 
     existing = set(_inspector().get_table_names())
@@ -121,7 +125,7 @@ def upgrade() -> None:
             sa.ForeignKeyConstraint(["assigned_to"], ["users.id"], ondelete="SET NULL"),
             sa.PrimaryKeyConstraint("id"),
         )
-        for column in ("business_id", "property_id", "unit_id", "assigned_to", "category", "status"):
+        for column in ("business_id", "property_id", "unit_id", "assigned_to", "category", "status", "id", "created_at"):
             op.create_index(f"ix_maintenance_tickets_{column}", "maintenance_tickets", [column])
         _record("table", "maintenance_tickets")
 
@@ -149,7 +153,7 @@ def upgrade() -> None:
             sa.ForeignKeyConstraint(["account_id"], ["chart_of_accounts.id"], ondelete="RESTRICT"),
             sa.PrimaryKeyConstraint("id"),
         )
-        for column in ("business_id", "property_id", "account_id", "entry_date", "entry_type", "reference", "source_type", "source_id"):
+        for column in ("business_id", "property_id", "account_id", "entry_date", "entry_type", "reference", "source_type", "source_id", "id", "created_at"):
             op.create_index(f"ix_journal_entries_{column}", "journal_entries", [column])
         _record("table", "journal_entries")
 
@@ -172,6 +176,8 @@ def upgrade() -> None:
                 "businesses",
                 sa.Column(name, column_type, nullable=nullable, server_default=server_default),
             )
+            if name == "mpesa_env":
+                op.alter_column("businesses", name, server_default=None)
             _record("column", f"businesses.{name}")
     # Keep a server default for mpesa_env so older application writers that
     # omit the field remain compatible on migrated databases.
