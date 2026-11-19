@@ -57,6 +57,14 @@ class CatalogItemCreate(BaseModel):
         return value
 
 
+class CatalogItemUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=160)
+    description: str | None = Field(default=None, max_length=2000)
+    features: dict | None = None
+    display_order: int | None = None
+    active: bool | None = None
+
+
 class PriceVersionCreate(BaseModel):
     currency: str = Field(default="KES", min_length=3, max_length=3, pattern=r"^[A-Z]{3}$")
     amount: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
@@ -72,11 +80,12 @@ class SelectionRequest(BaseModel):
     addon_codes: list[str] = Field(default_factory=list, max_length=30)
 
 
-async def _catalogue(session: AsyncSession, now: datetime, include_unpriced: bool = False):
+async def _catalogue(session: AsyncSession, now: datetime, include_unpriced: bool = False, include_inactive: bool = False):
+    query = select(SubscriptionCatalogItem)
+    if not include_inactive:
+        query = query.where(SubscriptionCatalogItem.active.is_(True))
     items = (await session.execute(
-        select(SubscriptionCatalogItem)
-        .where(SubscriptionCatalogItem.active.is_(True))
-        .order_by(SubscriptionCatalogItem.display_order, SubscriptionCatalogItem.name)
+        query.order_by(SubscriptionCatalogItem.display_order, SubscriptionCatalogItem.name)
     )).scalars().all()
     output = []
     for item in items:
@@ -85,7 +94,7 @@ async def _catalogue(session: AsyncSession, now: datetime, include_unpriced: boo
             continue
         output.append({
             "id": str(item.id), "code": item.code, "name": item.name, "description": item.description,
-            "item_type": item.item_type, "pricing_model": item.pricing_model,
+            "item_type": item.item_type, "pricing_model": item.pricing_model, "active": item.active,
             "features": item.features or {}, "currency": price.currency if price else None,
             "billing_interval": price.billing_interval if price else None,
             "amount": str(price.amount) if price else None,
@@ -271,7 +280,7 @@ async def check_entitlement(
 
 @router.get("/admin/catalogue")
 async def admin_catalogue(session: SessionDep, admin: PlatformAdminDep):
-    return {"items": await _catalogue(session, datetime.now(timezone.utc), include_unpriced=True)}
+    return {"items": await _catalogue(session, datetime.now(timezone.utc), include_unpriced=True, include_inactive=True)}
 
 
 @router.post("/admin/catalogue", status_code=201)
@@ -291,6 +300,41 @@ async def create_catalogue_item(data: CatalogItemCreate, session: SessionDep, ad
 
 
 @router.post("/admin/catalogue/{item_id}/prices", status_code=201)
+
+
+@router.put("/admin/catalogue/{item_id}")
+async def update_catalogue_item(
+    item_id: UUID,
+    data: CatalogItemUpdate,
+    session: SessionDep,
+    admin: PlatformAdminDep,
+    request: Request,
+):
+    item = await session.scalar(
+        select(SubscriptionCatalogItem)
+        .where(SubscriptionCatalogItem.id == item_id)
+        .with_for_update()
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Catalogue item not found")
+    changes = data.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=422, detail="No catalogue changes supplied")
+    for key, value in changes.items():
+        if value is None and key != "description":
+            raise HTTPException(status_code=422, detail=f"{key} cannot be null")
+        setattr(item, key, value)
+    record_platform_admin_event(
+        session, admin, "catalogue.item.updated",
+        target_type="subscription_catalog_item", target_id=str(item.id),
+        metadata={"changed_fields": sorted(changes.keys()), "active": item.active},
+        request=request,
+    )
+    await session.flush()
+    return {"id": str(item.id), "code": item.code, "active": item.active,
+            "name": item.name, "features": item.features or {}}
+
+
 async def create_price_version(item_id: UUID, data: PriceVersionCreate, session: SessionDep, admin: PlatformAdminDep, request: Request):
     item = await session.scalar(
         select(SubscriptionCatalogItem).where(SubscriptionCatalogItem.id == item_id)
