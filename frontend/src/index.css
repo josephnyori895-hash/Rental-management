@@ -1,3 +1,4 @@
+@import "./styles/premium.css";
 @import "./styles/animations.css";
 @tailwind base;
 @tailwind components;
@@ -20,4 +21,3 @@ body {
   }
 }
 
-@import "./styles/premium.css";
