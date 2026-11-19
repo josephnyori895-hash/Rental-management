@@ -186,6 +186,7 @@ async def apply_verified_platform_subscription_payment(
     else:
         raise HTTPException(status_code=409, detail="Unsupported subscription billing interval")
 
+    await session.flush()  # Materialize the payment UUID before it is copied into the event.
     session.add(BusinessSubscriptionEvent(
         business_id=invoice.business_id,
         subscription_id=subscription.id,
