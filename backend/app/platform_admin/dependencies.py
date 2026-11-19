@@ -46,3 +46,16 @@ async def get_current_platform_admin(
 
 
 PlatformAdminDep = Annotated[PlatformAdmin, Depends(get_current_platform_admin)]
+
+
+
+async def get_current_superadmin(admin: PlatformAdminDep) -> PlatformAdmin:
+    if not admin.is_superadmin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Superadministrator access required",
+        )
+    return admin
+
+
+SuperAdminDep = Annotated[PlatformAdmin, Depends(get_current_superadmin)]
