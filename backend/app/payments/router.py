@@ -350,10 +350,14 @@ def _verify_callback_token(request: Request) -> None:
     """
     expected = settings.MPESA_CALLBACK_SECRET
     if not expected or expected.startswith("change-"):
+        if settings.APP_ENV.strip().lower() == "production":
+            raise HTTPException(
+                status_code=503,
+                detail="M-Pesa callback verification is not configured",
+            )
         logger.warning(
-            "MPESA_CALLBACK_SECRET is unset or still a placeholder — M-PESA "
-            "callback verification is DISABLED; forged callbacks can mark "
-            "invoices paid. Set a real secret and register the tokenised URL."
+            "MPESA_CALLBACK_SECRET is unset or still a placeholder — "
+            "callback verification is disabled outside production."
         )
         return
     supplied = request.query_params.get("token", "")
@@ -403,9 +407,14 @@ def _verify_c2b_token(request: Request) -> None:
     """
     expected = settings.MPESA_C2B_SECRET
     if not expected or expected.startswith("change-"):
+        if settings.APP_ENV.strip().lower() == "production":
+            raise HTTPException(
+                status_code=503,
+                detail="M-Pesa Paybill callback verification is not configured",
+            )
         logger.warning(
-            "MPESA_C2B_SECRET is unset — Paybill callback verification is "
-            "DISABLED; forged confirmations can mark invoices paid."
+            "MPESA_C2B_SECRET is unset — callback verification is disabled "
+            "outside production."
         )
         return
     supplied = request.query_params.get("token", "")
