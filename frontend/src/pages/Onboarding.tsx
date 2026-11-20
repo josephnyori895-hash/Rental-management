@@ -289,6 +289,8 @@ export default function Onboarding() {
                 <option value="building">Building</option>
                 <option value="house">House</option>
                 <option value="commercial">Commercial</option>
+                <option value="mixed_use">Mixed-use property</option>
+                <option value="compound">Compound / multi-building site</option>
               </select>
             </div>
             <div className="flex gap-2">
@@ -533,7 +535,7 @@ export default function Onboarding() {
             <div className="text-sm text-slate-400 space-y-1">
               <p>Next steps:</p>
               <ul className="list-disc list-inside text-slate-300">
-                <li>Open <strong>Properties</strong> to see your building canvas.</li>
+                <li>Open <strong>Properties</strong> to configure your buildings, floors, rental units and internal rooms.</li>
                 <li>Open <strong>Settings</strong> to enable M-Pesa / Airtel / card rails.</li>
                 <li>Run <strong>Rent run</strong> each month to raise rent invoices.</li>
               </ul>
