@@ -141,11 +141,11 @@ export default function Settings() {
     <div className="space-y-5">
       <PageHeader title="Settings" sub="Configure your business & operations" />
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Settings sections">
         {tabs.map((t) => (
-          <button key={t.id} onClick={() => setActive(t.id)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-              active === t.id ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30" : "bg-slate-800/50 text-slate-400 border border-slate-700/50"
+          <button key={t.id} type="button" role="tab" aria-selected={active === t.id} onClick={() => setActive(t.id)}
+            className={`shrink-0 min-h-10 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition ${
+              active === t.id ? "bg-emerald-300/10 text-emerald-200 border border-emerald-300/20" : "bg-white/[0.03] text-slate-400 border border-white/[0.06] hover:text-slate-200"
             }`}>
             {t.icon} {t.label}
           </button>
@@ -427,17 +427,23 @@ export default function Settings() {
                 <p className="text-[11px] text-emerald-300">{reminderResult}</p>
               </div>
             )}
-            <p className="text-[11px] text-slate-500">
-              Daily automated reminders enabled. Tenants with WhatsApp receive WA messages; others receive SMS.
-              {!smsConfig?.whatsapp_provider_configured && !smsConfig?.sms_provider_configured && " Currently in simulated mode."}
-            </p>
-            <div className="border-t border-white/[0.06] pt-4 space-y-2">
-              <h4 className="text-xs font-semibold text-slate-300">Notification Preferences</h4>
-              <Toggle label="Rent due reminders" on />
-              <Toggle label="Payment overdue alerts" on />
-              <Toggle label="Maintenance updates" on />
-              <Toggle label="Weekly owner statement" on />
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs text-slate-400">Daily reminder schedule</span>
+                <span className={`text-xs font-semibold ${smsConfig?.daily_reminders_enabled ? "text-emerald-300" : "text-amber-300"}`}>
+                  {smsConfig ? (smsConfig.daily_reminders_enabled ? "Enabled" : "Disabled") : "Status unavailable"}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                {smsConfig?.daily_reminders_enabled
+                  ? "The backend reports that the daily reminder schedule is enabled."
+                  : "The backend does not currently report an enabled daily reminder schedule."}
+                {!smsConfig?.whatsapp_provider_configured && !smsConfig?.sms_provider_configured && " Message providers are not configured, so delivery may be simulated."}
+              </p>
             </div>
+            <p className="text-[11px] text-slate-500">
+              This screen currently exposes the reminder runner and the backend schedule status. Separate per-event notification preferences are not available here, so no non-persistent switches are shown.
+            </p>
           </div>
         )}
 
@@ -503,11 +509,17 @@ export default function Settings() {
         )}
 
         {active === "security" && (
-          <div className="space-y-3 text-sm">
-            <Field label="2FA" value="Enabled" />
-            <Field label="Session" value="Active on this device" />
-            <Toggle label="Require caretaker PIN" on />
-            <p className="text-[11px] text-slate-500">Audit log: 142 events in last 30 days.</p>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4 text-emerald-300" />
+              <h3 className="text-sm font-semibold text-white">Account security</h3>
+            </div>
+            <div className="rounded-xl border border-amber-300/15 bg-amber-300/[0.05] p-4">
+              <p className="text-xs font-medium text-amber-200">Security controls are not exposed in this workspace yet.</p>
+              <p className="text-[11px] leading-relaxed text-slate-400 mt-2">
+                Two-factor enrollment, active-session management, caretaker PIN policy and audit-event history are not currently available from this settings screen. Their status is not assumed or presented as enabled.
+              </p>
+            </div>
           </div>
         )}
       </Card>

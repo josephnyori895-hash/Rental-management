@@ -153,10 +153,11 @@ export default function Overview() {
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-4">
 
-      <motion.div variants={item} className="flex items-center justify-between">
+      <motion.div variants={item} className="flex flex-col gap-4 rounded-2xl border border-white/[0.07] bg-[radial-gradient(ellipse_at_top_right,rgba(16,185,129,.11),transparent_55%),linear-gradient(135deg,rgba(15,29,44,.96),rgba(8,18,30,.96))] p-5 sm:flex-row sm:items-end sm:justify-between sm:p-7">
         <div>
-          <h1 className="text-xl font-bold text-white">Dashboard</h1>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[.22em] text-emerald-300">Portfolio command centre</p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Your portfolio, at a glance.</h1>
+          <p className="mt-2 text-xs text-slate-400 sm:text-sm">
             {new Date().toLocaleDateString("en-KE", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
           </p>
         </div>
@@ -180,7 +181,7 @@ export default function Overview() {
       </motion.div>
 
       <motion.div variants={item}>
-        <Card className="p-5" hover={false}>
+        <Card className="p-5 sm:p-6" hover={false}>
           <div className="flex items-center gap-2 mb-4">
             <DollarSign className="w-4 h-4 text-emerald-400" />
             <h2 className="text-sm font-semibold text-white">Cash Flow</h2>
@@ -190,18 +191,18 @@ export default function Overview() {
               Collection rate <span className="text-emerald-400 font-semibold"><AnimatedNumber value={collectionRate} />%</span>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-6">
             <div>
               <div className="text-[11px] text-slate-500 mb-1">Expected</div>
-              <div className="text-2xl font-bold text-white">KES <AnimatedNumber value={money(t.expected)} /></div>
+              <div className="text-xl font-semibold tracking-tight text-white sm:text-2xl">KES <AnimatedNumber value={money(t.expected)} /></div>
             </div>
             <div>
               <div className="text-[11px] text-slate-500 mb-1">Collected</div>
-              <div className="text-2xl font-bold text-emerald-400">KES <AnimatedNumber value={money(t.collected)} /></div>
+              <div className="text-xl font-semibold tracking-tight text-emerald-300 sm:text-2xl">KES <AnimatedNumber value={money(t.collected)} /></div>
             </div>
             <div>
               <div className="text-[11px] text-slate-500 mb-1">Outstanding</div>
-              <div className={`text-2xl font-bold ${t.outstanding > 0 ? "text-rose-400" : "text-white"}`}>
+              <div className={`text-xl font-semibold tracking-tight sm:text-2xl ${t.outstanding > 0 ? "text-rose-300" : "text-white"}`}>
                 KES <AnimatedNumber value={money(t.outstanding)} />
               </div>
             </div>
@@ -217,9 +218,9 @@ export default function Overview() {
         </Card>
       </motion.div>
 
-      <div className="grid md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
 
-        <motion.div variants={item} className="md:col-span-3 space-y-4">
+        <motion.div variants={item} className="space-y-5 xl:col-span-3">
 
           <Card className="overflow-hidden" hover={false}>
             <div className="flex items-center gap-1 px-3 pt-3 pb-2 overflow-x-auto scrollbar-thin">
@@ -356,7 +357,7 @@ export default function Overview() {
           </Card>
         </motion.div>
 
-        <motion.div variants={item} className="md:col-span-2 space-y-4">
+        <motion.div variants={item} className="space-y-5 xl:col-span-2">
 
           {alerts.length > 0 && (
             <Card className="p-4" hover={false}>

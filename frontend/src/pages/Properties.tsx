@@ -3,14 +3,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Building2, User, Phone, CalendarDays, Receipt,
   CheckCircle2, Droplets, Sparkles, X, Home, ShieldCheck, RotateCcw,
-  Layers, Grid3X3, Square, PanelBottom,
+  Layers, Square,
 } from "lucide-react";
-import { getBoard, getRooms, getProperties, listStaff, assignCaretaker } from "../lib/api";
+import { getBoard, getRooms, getProperties, getPropertyLayout, listStaff, assignCaretaker } from "../lib/api";
 import { Card, Badge, PageHeader, money, EmptyState } from "../components/ui";
 import BuildingCanvas from "../components/BuildingCanvas";
+import PropertyStructurePlan from "../components/PropertyStructurePlan";
 import BlueprintCanvas from "../components/BlueprintCanvas";
 import IsometricCanvas from "../components/IsometricCanvas";
 import PanelGrid from "../components/PanelGrid";
+import PropertyLayoutEditor from "../components/PropertyLayoutEditor";
 
 type Light = "vacant" | "unpaid" | "partial" | "paid" | "overpaid";
 
@@ -23,10 +25,8 @@ const LIGHT: Record<Light, { color: string; glow: string; label: string }> = {
 };
 
 const VIEWS = [
-  { id: "building",  label: "Building",  icon: <Building2 className="w-3.5 h-3.5" /> },
-  { id: "blueprint", label: "Blueprint", icon: <Layers className="w-3.5 h-3.5" /> },
-  { id: "isometric", label: "Isometric", icon: <Grid3X3 className="w-3.5 h-3.5" /> },
-  { id: "panels",    label: "Panels",    icon: <Square className="w-3.5 h-3.5" /> },
+  { id: "building", label: "Property structure", icon: <Building2 className="w-3.5 h-3.5" /> },
+  { id: "panels", label: "Unit cards", icon: <Square className="w-3.5 h-3.5" /> },
 ];
 
 export default function Properties() {
@@ -40,6 +40,8 @@ export default function Properties() {
   const [properties, setProperties] = useState<any[]>([]);
   const [caretakers, setCaretakers] = useState<any[]>([]);
   const [assignError, setAssignError] = useState("");
+  const [layoutEditorOpen, setLayoutEditorOpen] = useState(false);
+  const [savedLayout, setSavedLayout] = useState<any>(null);
 
   useEffect(() => {
     getBoard().then((d) => {
@@ -68,16 +70,42 @@ export default function Properties() {
     getRooms(selected).then((d) => { setRooms(Array.isArray(d) ? d : d.rooms || []); setLoading(false); }).catch(() => setLoading(false));
   }, [selected]);
 
+  useEffect(() => {
+    if (!selected) { setSavedLayout(null); return; }
+    let active = true;
+    getPropertyLayout(selected)
+      .then((result) => { if (active) setSavedLayout(result?.layout_config ?? null); })
+      .catch(() => { if (active) setSavedLayout(null); });
+    return () => { active = false; };
+  }, [selected]);
+
   const hostel = board?.hostels.find((h: any) => h.property_id === selected) || board?.hostels[0];
 
-  const perFloor = Math.ceil(Math.sqrt(rooms.length || 1)) + 2;
   const floors = useMemo(() => {
     const sorted = [...rooms].sort((a, b) =>
       a.unit_number.localeCompare(b.unit_number, undefined, { numeric: true }));
-    const rows: any[][] = [];
-    for (let i = 0; i < sorted.length; i += perFloor) rows.push(sorted.slice(i, i + perFloor));
-    return rows.reverse().map((r, i) => ({ rooms: r, label: `${rows.length - i}F` }));
-  }, [rooms, perFloor]);
+    const placements = savedLayout?.placements ?? [];
+    const configuredFloors = (savedLayout?.sections ?? []).flatMap((section: any) =>
+      (section.levels ?? []).map((level: any) => {
+        const unitIds = placements
+          .filter((placement: any) => placement.section_id === section.id && placement.level_id === level.id)
+          .map((placement: any) => placement.unit_id);
+        return {
+          rooms: unitIds.map((id: string) => sorted.find((room: any) => room.id === id)).filter(Boolean),
+          label: `${section.name} · ${level.label}`,
+        };
+      })
+    );
+    if (!configuredFloors.length) {
+      return [{ rooms: sorted, label: "Floor not configured" }];
+    }
+    const mappedIds = new Set(placements.map((placement: any) => placement.unit_id));
+    const unassigned = sorted.filter((room: any) => !mappedIds.has(room.id));
+    return [
+      ...configuredFloors,
+      ...(unassigned.length ? [{ rooms: unassigned, label: "Unassigned units" }] : []),
+    ];
+  }, [rooms, savedLayout]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { vacant: 0, unpaid: 0, partial: 0, paid: 0, overpaid: 0 };
@@ -94,7 +122,12 @@ export default function Properties() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Properties" sub="Live building view — every room, lit by rent status" />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <PageHeader title="Properties" sub="Manage your portfolio, rental units and each property's real structure" />
+        {selected && <button type="button" onClick={() => setLayoutEditorOpen(true)} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/15">
+          <Layers className="h-4 w-4" /> Configure building & rooms
+        </button>}
+      </div>
 
       {assignError && (
         <div className="text-xs text-rose-400 px-1">{assignError}</div>
@@ -184,25 +217,14 @@ export default function Properties() {
       ) : (
         <div className="rounded-2xl overflow-hidden border border-slate-800/50 bg-slate-950">
           {view === "building" && (
-            <>
-              <BuildingCanvas floors={floors} counts={counts} propertyName={hostel?.name}
-                totalUnits={rooms.length} occupied={hostel?.occupied}
-                onRoomClick={openRoom} activeRoomId={active} />
-              <div className="border-t border-slate-800/40 bg-slate-900/60 backdrop-blur-sm px-5 py-2.5 flex items-center justify-between text-[10px]">
-                <span className="text-slate-500 font-mono">{hostel?.name} · {rooms.length} units · {hostel?.occupied || 0} occupied</span>
-                <span className="text-slate-600">Click any window to inspect the room</span>
-              </div>
-            </>
-          )}
-          {view === "blueprint" && (
-            <BlueprintCanvas floors={floors} counts={counts} propertyName={hostel?.name}
-              totalUnits={rooms.length} occupied={hostel?.occupied}
-              onRoomClick={openRoom} activeRoomId={active} />
-          )}
-          {view === "isometric" && (
-            <IsometricCanvas floors={floors} counts={counts} propertyName={hostel?.name}
-              totalUnits={rooms.length} occupied={hostel?.occupied}
-              onRoomClick={openRoom} activeRoomId={active} />
+            <PropertyStructurePlan
+              propertyName={hostel?.name}
+              sections={savedLayout?.sections ?? []}
+              placements={savedLayout?.placements ?? []}
+              units={rooms}
+              onUnitClick={openRoom}
+              activeUnitId={active}
+            />
           )}
           {view === "panels" && (
             <PanelGrid floors={floors} counts={counts} propertyName={hostel?.name}
@@ -210,6 +232,57 @@ export default function Properties() {
               onRoomClick={openRoom} activeRoomId={active} />
           )}
         </div>
+      )}
+
+      {/* Saved physical structure — separate from rentable units and their leases. */}
+      <section className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 sm:p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-white">Configured property structure</h2>
+            <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">Describe the real blocks, floors, internal rooms and shared spaces. A bedroom, kitchen or bathroom stays part of its containing rental unit; it does not become a separate tenancy.</p>
+          </div>
+          {selected && <button type="button" onClick={() => setLayoutEditorOpen(true)} className="shrink-0 rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 hover:border-emerald-500/40 hover:text-emerald-200">Edit structure</button>}
+        </div>
+        {savedLayout?.sections?.length ? (
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {savedLayout.sections.map((section: any) => (
+              <div key={section.id} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-slate-100">{section.name}</p>
+                  <span className="text-[10px] text-slate-500">{section.kind}</span>
+                </div>
+                <div className="mt-3 space-y-3">
+                  {(section.levels ?? []).map((level: any) => (
+                    <div key={level.id}>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-300/80">{level.label}</p>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {(level.spaces ?? []).length ? level.spaces.map((space: any) => {
+                          const unit = rooms.find((room: any) => room.id === space.rentable_unit_id);
+                          return <span key={space.id} className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[10px] text-slate-300">
+                            {space.label}<span className="ml-1 text-slate-500">· {space.kind.replaceAll("_", " ")}{unit ? ` · ${unit.unit_number}` : " · shared"}</span>
+                          </span>;
+                        }) : <span className="text-[10px] text-slate-600">No internal rooms recorded</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-xl border border-dashed border-slate-700 p-4 text-xs text-slate-500">
+            No custom structure has been saved for this property yet. Configure its actual blocks, floors and internal rooms when ready.
+          </div>
+        )}
+      </section>
+
+      {layoutEditorOpen && selected && (
+        <PropertyLayoutEditor
+          propertyId={selected}
+          rooms={rooms.map((room: any) => ({ id: room.id, unit_number: room.unit_number, tenant_name: room.tenant_name }))}
+          onClose={() => setLayoutEditorOpen(false)}
+          onSaved={(config) => { setSavedLayout(config); setLayoutEditorOpen(false); }}
+        />
       )}
 
       {/* Room detail drawer */}

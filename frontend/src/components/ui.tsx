@@ -11,10 +11,10 @@ export function Card({ children, className = "", delay = 0, onClick, hover = tru
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, ...spring }}
-      whileHover={hover ? { y: -3, transition: { duration: 0.2 } } : undefined}
+      whileHover={hover ? { y: -2, transition: { duration: 0.2 } } : undefined}
       onClick={onClick}
-      className={`group relative rounded-2xl bg-slate-900/60 backdrop-blur-xl border border-white/[0.06] overflow-hidden
-        ${hover ? "cursor-pointer hover:border-emerald-500/20 hover:shadow-lg hover:shadow-emerald-500/[0.03] transition-all duration-300" : ""}
+      className={`group relative rounded-2xl bg-[#0d1a28]/80 backdrop-blur-xl border border-white/[0.07] shadow-[0_12px_40px_rgba(0,0,0,.12)] overflow-hidden
+        ${hover ? "cursor-pointer hover:border-emerald-300/20 hover:bg-[#102033] hover:shadow-[0_18px_48px_rgba(0,0,0,.2)] transition-all duration-300" : ""}
         ${onClick ? "cursor-pointer" : ""}
         ${className}
       `}
@@ -104,7 +104,7 @@ export function StatCard({
         <>{value}</>
       ) : (
         <>
-          <div className={`text-2xl font-bold font-heading tracking-tight ${colorMap[color] || colorMap.emerald}`} style={{ animation: "number-pop 0.5s ease-out" }}>
+          <div className={`text-2xl font-semibold font-heading tracking-tight ${colorMap[color] || colorMap.emerald}`} style={{ animation: "number-pop 0.5s ease-out" }}>
             <AnimatedNumber value={value} />{suffix && <span className="text-sm font-normal text-slate-500 ml-1">{suffix}</span>}
           </div>
           <div className="text-[11px] text-slate-500 mt-0.5">{label}</div>
@@ -190,7 +190,7 @@ export function AnimatedNumber({ value, duration = 1 }: { value: string | number
 export function SectionTitle({ title, sub }: { title: string; sub?: string }) {
   return (
     <div className="mb-1">
-      <h3 className="text-sm font-semibold text-slate-200 font-heading">{title}</h3>
+      <h3 className="text-base font-semibold text-white font-heading tracking-tight">{title}</h3>
       {sub && <p className="text-[11px] text-slate-500">{sub}</p>}
     </div>
   );
@@ -207,7 +207,7 @@ export function Badge({ children, color = "emerald" }: { children: React.ReactNo
     white: "bg-white/10 text-white border border-white/20",
   };
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium ${colors[color] || colors.slate}`}>
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide ${colors[color] || colors.slate}`}>
       {children}
     </span>
   );
@@ -222,7 +222,7 @@ export function PageHeader({ title, sub, actions }: { title: string; sub?: strin
       className="flex items-center justify-between flex-wrap gap-2"
     >
       <div>
-        <h1 className="text-xl font-bold text-white font-heading tracking-tight">{title}</h1>
+        <h1 className="text-2xl font-semibold text-white font-heading tracking-tight">{title}</h1>
         {sub && <p className="text-xs text-slate-500 mt-0.5">{sub}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
@@ -232,7 +232,7 @@ export function PageHeader({ title, sub, actions }: { title: string; sub?: strin
 
 export function EmptyState({ icon, text, sub }: { icon: React.ReactNode; text: string; sub?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/[0.09] bg-[#0b1724]/55 px-6 py-16 text-center">
       <div className="text-slate-700 mb-4 opacity-60">{icon}</div>
       <p className="text-sm text-slate-500">{text}</p>
       {sub && <p className="text-xs text-slate-600 mt-1">{sub}</p>}

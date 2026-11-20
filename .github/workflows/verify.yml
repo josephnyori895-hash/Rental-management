@@ -51,7 +51,9 @@ jobs:
       SECRET_KEY: ci-only-secret-key-not-for-production-000000
       JWT_SECRET: ci-only-jwt-secret-not-for-production-000000
       ENCRYPTION_KEY: abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789
-      DATABASE_URL: postgresql+asyncpg://test:test@127.0.0.1:5432/rental_test
+      # Keep the app's reference URL distinct from the disposable test target.
+      # conftest compares both identities before it permits DROP SCHEMA.
+      DATABASE_URL: postgresql+asyncpg://test:test@127.0.0.1:5432/rental_os_ci
       TEST_DATABASE_URL: postgresql+asyncpg://test:test@127.0.0.1:5432/rental_test
     steps:
       - name: Checkout

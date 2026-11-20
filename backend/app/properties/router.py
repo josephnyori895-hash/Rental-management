@@ -304,11 +304,18 @@ async def save_property_layout(
     prop = await owned_property(property_id, user, session)
 
     unit_ids = [placement.unit_id for placement in payload.layout_config.placements]
+    unit_ids.extend(
+        space.rentable_unit_id
+        for section in payload.layout_config.sections
+        for level in section.levels
+        for space in level.spaces
+        if space.rentable_unit_id is not None
+    )
     if unit_ids:
         owned_units = set(
             (await session.scalars(
                 select(Unit.id).where(
-                    Unit.id.in_(unit_ids),
+                    Unit.id.in_(set(unit_ids)),
                     Unit.property_id == prop.id,
                     Unit.business_id == user.business_id,
                     Unit.is_deleted.is_(False),

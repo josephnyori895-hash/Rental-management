@@ -1,14 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, Plus, Save, Trash2, X } from "lucide-react";
 import { getPropertyLayout, savePropertyLayout } from "../lib/api";
+import PropertyLayoutCanvas from "./PropertyLayoutCanvas";
 
 type Orientation = "front" | "back" | "left" | "right" | "interior";
-type LayoutLevel = { id: string; label: string; order: number };
+type LayoutSpace = {
+  id: string;
+  label: string;
+  kind: "bedroom" | "kitchen" | "bathroom" | "living_room" | "dining_room" | "balcony" | "storage" | "corridor" | "office" | "shop" | "shared" | "other";
+  rentable_unit_id?: string | null;
+  order: number;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  rotation?: number;
+};
+type LayoutLevel = { id: string; label: string; order: number; spaces: LayoutSpace[] };
 type LayoutFace = { id: string; label: string; orientation: Orientation };
 type LayoutSection = {
   id: string;
   name: string;
   kind: "block" | "wing" | "entrance" | "standalone";
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  rotation?: number;
   levels: LayoutLevel[];
   faces: LayoutFace[];
 };
@@ -18,6 +36,11 @@ type UnitPlacement = {
   level_id: string;
   face_id: string;
   position: number;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  rotation?: number;
 };
 type LayoutConfig = {
   version: 1;
@@ -39,7 +62,7 @@ const makeSection = (name: string, kind: LayoutSection["kind"] = "block"): Layou
   id: newId(),
   name,
   kind,
-  levels: [{ id: newId(), label: "Ground floor", order: 0 }],
+  levels: [{ id: newId(), label: "Ground floor", order: 0, spaces: [] }],
   faces: [
     { id: newId(), label: "Front", orientation: "front" },
     { id: newId(), label: "Back", orientation: "back" },
@@ -57,6 +80,7 @@ const emptyConfig: LayoutConfig = {
 
 export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSaved }: Props) {
   const [config, setConfig] = useState<LayoutConfig>(emptyConfig);
+  const [savedConfig, setSavedConfig] = useState<LayoutConfig>(emptyConfig);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -68,7 +92,9 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
     getPropertyLayout(propertyId)
       .then((result) => {
         if (!active) return;
-        setConfig(result?.layout_config ?? emptyConfig);
+        const loadedConfig = result?.layout_config ?? emptyConfig;
+        setConfig(loadedConfig);
+        setSavedConfig(loadedConfig);
       })
       .catch((err: unknown) => {
         if (active) setError(err instanceof Error ? err.message : "Could not load saved layout.");
@@ -76,6 +102,16 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [propertyId]);
+
+  const hasUnsavedChanges = useMemo(
+    () => JSON.stringify(config) !== JSON.stringify(savedConfig),
+    [config, savedConfig],
+  );
+
+  const requestClose = () => {
+    if (hasUnsavedChanges && !window.confirm("Discard your unsaved property layout changes?")) return;
+    onClose();
+  };
 
   const placementsByUnit = useMemo(
     () => new Map(config.placements.map((placement) => [placement.unit_id, placement])),
@@ -89,8 +125,17 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
     }));
   };
 
-  const addSection = () => {
-    const section = makeSection(`Block ${config.sections.length + 1}`);
+  const addSection = (kind: LayoutSection["kind"] = "block") => {
+    const index = config.sections.length + 1;
+    const name = kind === "standalone" ? `House ${index}` : kind === "wing" ? `Wing ${index}` : `Block ${index}`;
+    const section = {
+      ...makeSection(name, kind),
+      x: Math.min(720, 40 + ((index - 1) % 3) * 310),
+      y: Math.min(720, 40 + Math.floor((index - 1) / 3) * 310),
+      width: 260,
+      height: 260,
+      rotation: 0,
+    };
     setConfig((current) => ({ ...current, sections: [...current.sections, section] }));
     setSavedMessage("");
   };
@@ -122,6 +167,11 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
       level_id: existing?.section_id === sectionId ? existing.level_id : section.levels[0].id,
       face_id: existing?.section_id === sectionId ? existing.face_id : section.faces[0].id,
       position: existing?.position ?? config.placements.length,
+      x: existing?.x ?? Math.min(810, 40 + (config.placements.length % 4) * 220),
+      y: existing?.y ?? Math.min(850, 40 + Math.floor(config.placements.length / 4) * 180),
+      width: existing?.width ?? 190,
+      height: existing?.height ?? 150,
+      rotation: existing?.rotation ?? 0,
     };
     setConfig((current) => ({
       ...current,
@@ -131,11 +181,19 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
     setSavedMessage("");
   };
 
-  const updatePlacement = (unitId: string, field: "level_id" | "face_id" | "position", value: string) => {
+  const updatePlacementGeometry = (unitId: string, patch: Partial<Pick<UnitPlacement, "x" | "y" | "width" | "height" | "rotation">>) => {
+    setConfig((current) => ({
+      ...current,
+      placements: current.placements.map((placement) => placement.unit_id === unitId ? { ...placement, ...patch } : placement),
+    }));
+    setSavedMessage("");
+  };
+
+  const updatePlacement = (unitId: string, field: "level_id" | "face_id" | "position" | "x" | "y" | "width" | "height" | "rotation", value: string) => {
     setConfig((current) => ({
       ...current,
       placements: current.placements.map((p) => p.unit_id === unitId
-        ? { ...p, [field]: field === "position" ? Number(value) || 0 : value }
+        ? { ...p, [field]: field === "level_id" || field === "face_id" ? value : Number(value) || 0 }
         : p),
     }));
     setSavedMessage("");
@@ -147,8 +205,62 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
       id: newId(),
       label: `Floor ${section.levels.length}`,
       order: section.levels.length,
+      spaces: [],
     }],
   }));
+
+  const removeLevel = (sectionId: string, levelId: string) => {
+    updateSection(sectionId, (section) => ({
+      ...section,
+      levels: section.levels.filter((level) => level.id !== levelId),
+    }));
+    setConfig((current) => ({
+      ...current,
+      placements: current.placements.filter((placement) =>
+        placement.section_id !== sectionId || placement.level_id !== levelId
+      ),
+    }));
+    setSavedMessage("");
+  };
+
+  const removeFace = (sectionId: string, faceId: string) => {
+    updateSection(sectionId, (section) => ({
+      ...section,
+      faces: section.faces.filter((face) => face.id !== faceId),
+    }));
+    setConfig((current) => ({
+      ...current,
+      placements: current.placements.filter((placement) =>
+        placement.section_id !== sectionId || placement.face_id !== faceId
+      ),
+    }));
+    setSavedMessage("");
+  };
+
+  const addSpace = (sectionId: string, levelId: string) => updateSection(sectionId, (section) => ({
+    ...section,
+    levels: section.levels.map((level) => level.id === levelId
+      ? { ...level, spaces: [...(level.spaces ?? []), { id: newId(), label: "New room", kind: "other", rentable_unit_id: null, order: level.spaces?.length ?? 0, x: Math.min(820, 40 + ((level.spaces?.length ?? 0) % 4) * 220), y: Math.min(860, 40 + Math.floor((level.spaces?.length ?? 0) / 4) * 180), width: 180, height: 140, rotation: 0 }] }
+      : level),
+  }));
+
+  const updateSpace = (sectionId: string, levelId: string, spaceId: string, patch: Partial<LayoutSpace>) => {
+    updateSection(sectionId, (section) => ({
+      ...section,
+      levels: section.levels.map((level) => level.id === levelId
+        ? { ...level, spaces: (level.spaces ?? []).map((space) => space.id === spaceId ? { ...space, ...patch } : space) }
+        : level),
+    }));
+    setSavedMessage("");
+  };
+
+  const removeSpace = (sectionId: string, levelId: string, spaceId: string) =>
+    updateSection(sectionId, (section) => ({
+      ...section,
+      levels: section.levels.map((level) => level.id === levelId
+        ? { ...level, spaces: (level.spaces ?? []).filter((space) => space.id !== spaceId) }
+        : level),
+    }));
 
   const addFace = (sectionId: string) => updateSection(sectionId, (section) => ({
     ...section,
@@ -165,6 +277,7 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
     setSavedMessage("");
     try {
       await savePropertyLayout(propertyId, config);
+      setSavedConfig(config);
       onSaved(config);
       setSavedMessage("Layout saved.");
     } catch (err) {
@@ -180,9 +293,9 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
         <header className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3 sm:px-6">
           <div>
             <h2 id="layout-editor-title" className="text-sm font-semibold text-white">Configure property layout</h2>
-            <p className="mt-1 text-xs text-slate-400">Map existing units to blocks, floors and faces. Rental records stay unchanged.</p>
+            <p className="mt-1 text-xs text-slate-400">Map rentable units to the property, then describe the rooms inside each unit. Bedrooms and kitchens never become rental units by themselves.</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close layout editor" className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white"><X className="h-4 w-4" /></button>
+          <button type="button" onClick={requestClose} aria-label="Close layout editor" className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white"><X className="h-4 w-4" /></button>
         </header>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
@@ -201,14 +314,36 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
                     <option value="compound">Compound / multiple buildings</option>
                   </select>
                 </label>
-                <button type="button" onClick={addSection} className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/15"><Plus className="h-4 w-4" /> Add block or wing</button>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => addSection("block")} className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/15"><Plus className="h-4 w-4" /> Add block</button>
+                  <button type="button" onClick={() => addSection("wing")} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800"><Plus className="h-4 w-4" /> Add wing</button>
+                  <button type="button" onClick={() => addSection("standalone")} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800"><Plus className="h-4 w-4" /> Add standalone house</button>
+                </div>
               </div>
+
+              {config.sections.length > 0 && (
+                <section className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/50 p-3 sm:p-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">Arrange the property site</h3>
+                    <p className="mt-1 text-xs text-slate-500">Move and resize blocks, wings and standalone buildings to reflect how they sit on the site.</p>
+                  </div>
+                  <PropertyLayoutCanvas
+                    items={config.sections.map((section, index) => ({
+                      id: `section:${section.id}`, label: section.name, kind: "section" as const,
+                      x: Math.min(1000 - (section.width ?? 260), section.x ?? Math.min(720, 40 + (index % 3) * 310)),
+                      y: Math.min(1000 - (section.height ?? 260), section.y ?? Math.min(720, 40 + Math.floor(index / 3) * 310)),
+                      width: section.width ?? 260, height: section.height ?? 260, rotation: section.rotation ?? 0,
+                    }))}
+                    onGeometryChange={(id, geometry) => updateSection(id.slice(8), (section) => ({ ...section, ...geometry }))}
+                  />
+                </section>
+              )}
 
               {config.sections.length === 0 && (
                 <div className="rounded-xl border border-dashed border-slate-700 p-8 text-center">
                   <p className="text-sm font-medium text-slate-200">Start with the real structure</p>
                   <p className="mt-1 text-xs text-slate-500">Add a block or wing, then assign units to its floors and faces.</p>
-                  <button type="button" onClick={addSection} className="mt-4 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold text-slate-950">Create first block</button>
+                  <button type="button" onClick={() => addSection("block")} className="mt-4 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold text-slate-950">Create first block</button>
                 </div>
               )}
 
@@ -224,18 +359,69 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-2">
                       <div className="flex items-center justify-between"><p className="text-xs font-semibold text-slate-300">Floors / levels</p><button type="button" onClick={() => addLevel(section.id)} className="text-xs text-emerald-300">+ Add floor</button></div>
-                      {section.levels.map((level) => <div key={level.id} className="flex gap-2"><input value={level.label} aria-label="Floor label" onChange={(event) => updateSection(section.id, (current) => ({ ...current, levels: current.levels.map((item) => item.id === level.id ? { ...item, label: event.target.value } : item) }))} className="min-w-0 flex-1 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-2 text-xs text-slate-200" /><span className="self-center text-[10px] text-slate-600">Order {level.order}</span></div>)}
+                      {section.levels.map((level) => (
+                        <div key={level.id} className="space-y-2 rounded-lg border border-slate-800 bg-slate-950/70 p-2.5">
+                          <div className="flex gap-2">
+                            <input value={level.label} aria-label="Floor label" onChange={(event) => updateSection(section.id, (current) => ({ ...current, levels: current.levels.map((item) => item.id === level.id ? { ...item, label: event.target.value } : item) }))} className="min-w-0 flex-1 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-2 text-xs text-slate-200" />
+                            <button type="button" onClick={() => removeLevel(section.id, level.id)} aria-label={`Remove ${level.label}`} className="rounded-lg border border-rose-500/20 px-2 py-1 text-rose-300 hover:bg-rose-500/10"><Trash2 className="h-3 w-3" /></button>
+                          </div>
+                          <PropertyLayoutCanvas
+                            items={[
+                              ...(level.spaces ?? []).map((space, index) => ({
+                                id: `space:${section.id}:${level.id}:${space.id}`, label: space.label, kind: "space" as const,
+                                x: Math.min(1000 - (space.width ?? 180), space.x ?? Math.min(820, 40 + (index % 4) * 220)),
+                                y: Math.min(1000 - (space.height ?? 140), space.y ?? Math.min(860, 40 + Math.floor(index / 4) * 180)),
+                                width: space.width ?? 180, height: space.height ?? 140, rotation: space.rotation ?? 0,
+                              })),
+                              ...config.placements.filter((placement) => placement.section_id === section.id && placement.level_id === level.id).map((placement, index) => ({
+                                id: `unit:${placement.unit_id}`, label: rooms.find((room) => room.id === placement.unit_id)?.unit_number ?? "Rental unit", kind: "unit" as const,
+                                x: Math.min(1000 - (placement.width ?? 190), placement.x ?? Math.min(810, 40 + (index % 4) * 220)),
+                                y: Math.min(1000 - (placement.height ?? 150), placement.y ?? Math.min(850, 40 + Math.floor(index / 4) * 180)),
+                                width: placement.width ?? 190, height: placement.height ?? 150, rotation: placement.rotation ?? 0,
+                              })),
+                            ]}
+                            onGeometryChange={(id, geometry) => {
+                              if (id.startsWith("unit:")) updatePlacementGeometry(id.slice(5), geometry);
+                              else {
+                                const [, sectionId, levelId, spaceId] = id.split(":");
+                                updateSpace(sectionId, levelId, spaceId, geometry);
+                              }
+                            }}
+                          />
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[10px] font-semibold text-slate-400">Internal rooms / shared spaces</p>
+                            <button type="button" onClick={() => addSpace(section.id, level.id)} className="text-[10px] font-medium text-emerald-300">+ Add room</button>
+                          </div>
+                          {(level.spaces ?? []).map((space) => (
+                            <div key={space.id} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_130px_minmax(0,1fr)_auto]">
+                              <input value={space.label} aria-label="Internal room name" onChange={(event) => updateSpace(section.id, level.id, space.id, { label: event.target.value })} className="min-w-0 rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-[11px] text-slate-200" />
+                              <select value={space.kind} aria-label="Internal room type" onChange={(event) => updateSpace(section.id, level.id, space.id, { kind: event.target.value as LayoutSpace["kind"] })} className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-[11px] text-slate-300">
+                                <option value="bedroom">Bedroom</option><option value="kitchen">Kitchen</option><option value="bathroom">Bathroom</option><option value="living_room">Living room</option><option value="dining_room">Dining room</option><option value="balcony">Balcony</option><option value="storage">Storage</option><option value="corridor">Corridor</option><option value="office">Office</option><option value="shop">Shop</option><option value="shared">Shared area</option><option value="other">Other</option>
+                              </select>
+                              <select value={space.rentable_unit_id ?? ""} aria-label="Containing rentable unit" onChange={(event) => updateSpace(section.id, level.id, space.id, { rentable_unit_id: event.target.value || null })} className="min-w-0 rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-[11px] text-slate-300">
+                                <option value="">Shared / not inside a unit</option>
+                                {rooms.map((room) => <option key={room.id} value={room.id}>Inside {room.unit_number}</option>)}
+                              </select>
+                              <button type="button" onClick={() => removeSpace(section.id, level.id, space.id)} aria-label={`Remove ${space.label}`} className="rounded-lg border border-rose-500/20 px-2 text-rose-300 hover:bg-rose-500/10"><Trash2 className="h-3.5 w-3.5" /></button>
+                              <div className="grid grid-cols-5 gap-1 sm:col-span-4">
+                                {(["x", "y", "width", "height", "rotation"] as const).map((field) => <label key={field} className="text-[9px] capitalize text-slate-500">{field}<input type="number" min={field === "rotation" ? -180 : field === "width" || field === "height" ? 10 : 0} max={field === "rotation" ? 180 : 1000} value={space[field] ?? (field === "width" || field === "height" ? 160 : 0)} onChange={(event) => updateSpace(section.id, level.id, space.id, { [field]: Number(event.target.value) } as Partial<LayoutSpace>)} className="mt-1 w-full rounded border border-slate-800 bg-slate-950 px-1.5 py-1 text-[10px] text-slate-200" /></label>)}
+                              </div>
+                            </div>
+                          ))}
+                          {(level.spaces ?? []).length === 0 && <p className="text-[10px] text-slate-600">No internal rooms defined for this level yet.</p>}
+                        </div>
+                      ))}
                     </div>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between"><p className="text-xs font-semibold text-slate-300">Faces / entrances</p><button type="button" onClick={() => addFace(section.id)} className="text-xs text-emerald-300">+ Add face</button></div>
-                      {section.faces.map((face) => <div key={face.id} className="grid grid-cols-[1fr_110px] gap-2"><input value={face.label} aria-label="Face label" onChange={(event) => updateSection(section.id, (current) => ({ ...current, faces: current.faces.map((item) => item.id === face.id ? { ...item, label: event.target.value } : item) }))} className="min-w-0 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-2 text-xs text-slate-200" /><select value={face.orientation} aria-label="Face orientation" onChange={(event) => updateSection(section.id, (current) => ({ ...current, faces: current.faces.map((item) => item.id === face.id ? { ...item, orientation: event.target.value as Orientation } : item) }))} className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-xs text-slate-300"><option value="front">Front</option><option value="back">Back</option><option value="left">Left</option><option value="right">Right</option><option value="interior">Interior</option></select></div>)}
+                      {section.faces.map((face) => <div key={face.id} className="grid grid-cols-[minmax(0,1fr)_110px_auto] gap-2"><input value={face.label} aria-label="Face label" onChange={(event) => updateSection(section.id, (current) => ({ ...current, faces: current.faces.map((item) => item.id === face.id ? { ...item, label: event.target.value } : item) }))} className="min-w-0 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-2 text-xs text-slate-200" /><select value={face.orientation} aria-label="Face orientation" onChange={(event) => updateSection(section.id, (current) => ({ ...current, faces: current.faces.map((item) => item.id === face.id ? { ...item, orientation: event.target.value as Orientation } : item) }))} className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-xs text-slate-300"><option value="front">Front</option><option value="back">Back</option><option value="left">Left</option><option value="right">Right</option><option value="interior">Interior</option></select><button type="button" onClick={() => removeFace(section.id, face.id)} aria-label={`Remove ${face.label}`} className="rounded-lg border border-rose-500/20 px-2 text-rose-300 hover:bg-rose-500/10"><Trash2 className="h-3 w-3" /></button></div>)}
                     </div>
                   </div>
                 </section>
               ))}
 
               <section className="space-y-3">
-                <div><h3 className="text-sm font-semibold text-white">Assign units</h3><p className="mt-1 text-xs text-slate-500">Each unit can be mapped once. Existing tenant and rent data is read-only here.</p></div>
+                <div><h3 className="text-sm font-semibold text-white">Assign and position units</h3><p className="mt-1 text-xs text-slate-500">Arrange units on the floor canvas by dragging them; resize from the corner or use the geometry fields below. Existing tenant and rent data is read-only here.</p></div>
                 {rooms.length === 0 ? <p className="rounded-lg border border-slate-800 p-4 text-xs text-slate-500">No units are available for this property yet.</p> : rooms.map((room) => {
                   const placement = placementsByUnit.get(room.id);
                   const section = config.sections.find((item) => item.id === placement?.section_id);
@@ -244,7 +430,9 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
                     <select value={placement?.section_id ?? ""} onChange={(event) => assignUnit(room.id, event.target.value)} aria-label={`Block for unit ${room.unit_number}`} className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-xs text-slate-200"><option value="">Not mapped</option>{config.sections.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
                     <select value={placement?.level_id ?? ""} disabled={!section} onChange={(event) => updatePlacement(room.id, "level_id", event.target.value)} aria-label={`Floor for unit ${room.unit_number}`} className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-xs text-slate-200"><option value="">Choose floor</option>{section?.levels.map((level) => <option key={level.id} value={level.id}>{level.label}</option>)}</select>
                     <select value={placement?.face_id ?? ""} disabled={!section} onChange={(event) => updatePlacement(room.id, "face_id", event.target.value)} aria-label={`Face for unit ${room.unit_number}`} className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-xs text-slate-200"><option value="">Choose face</option>{section?.faces.map((face) => <option key={face.id} value={face.id}>{face.label}</option>)}</select>
-                    {placement && <label className="flex items-center gap-2 text-[10px] text-slate-500 md:col-span-4">Position on face<input type="number" min="0" max="10000" value={placement.position} onChange={(event) => updatePlacement(room.id, "position", event.target.value)} className="w-24 rounded-lg border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-white" /></label>}
+                    {placement && <div className="grid grid-cols-3 gap-2 md:col-span-4 lg:grid-cols-6">
+                      {(["x", "y", "width", "height", "rotation", "position"] as const).map((field) => <label key={field} className="text-[10px] capitalize text-slate-500">{field === "x" || field === "y" ? `${field} · 0–1000` : field === "rotation" ? "Rotation · °" : field === "position" ? "Sort order" : `${field} · 10–1000`}<input type="number" min={field === "rotation" ? -180 : field === "position" || field === "x" || field === "y" ? 0 : 10} max={field === "rotation" ? 180 : field === "position" ? 10000 : 1000} value={placement[field] ?? (field === "width" || field === "height" ? 180 : 0)} onChange={(event) => updatePlacement(room.id, field, event.target.value)} className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-white" /></label>)}
+                    </div>}
                   </div>;
                 })}
               </section>
@@ -255,8 +443,8 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
         </div>
 
         <footer className="flex items-center justify-between gap-3 border-t border-slate-800 bg-slate-950 px-4 py-3 sm:px-6">
-          <p className="text-[10px] text-slate-500">{config.placements.length} of {rooms.length} units mapped</p>
-          <div className="flex gap-2"><button type="button" onClick={onClose} className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-slate-800">Cancel</button><button type="button" disabled={loading || saving} onClick={save} className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-xs font-semibold text-slate-950 disabled:opacity-50"><Save className="h-3.5 w-3.5" />{saving ? "Saving…" : "Save layout"}</button></div>
+          <p className="text-[10px] text-slate-500">{config.placements.length} of {rooms.length} units mapped{hasUnsavedChanges ? " · Unsaved changes" : ""}</p>
+          <div className="flex gap-2"><button type="button" onClick={requestClose} className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-slate-800">Cancel</button><button type="button" disabled={loading || saving} onClick={save} className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-xs font-semibold text-slate-950 disabled:opacity-50"><Save className="h-3.5 w-3.5" />{saving ? "Saving…" : "Save layout"}</button></div>
         </footer>
       </div>
     </div>

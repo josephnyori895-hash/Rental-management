@@ -14,7 +14,7 @@ class PropertyCreate(BaseModel):
     name: str
     address: str | None = None
     property_type: Literal[
-        "hostel", "apartment", "building", "house", "commercial"
+        "hostel", "apartment", "building", "house", "commercial", "mixed_use", "compound"
     ] = "hostel"
     description: str | None = None
 
@@ -75,10 +75,32 @@ class UnitOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class LayoutSpace(BaseModel):
+    """A non-rentable internal room or shared space inside a property level.
+
+    rentable_unit_id links internal rooms to their containing rentable unit.
+    A null value represents a shared/common area and never creates a lease.
+    """
+    id: str = Field(min_length=1, max_length=80)
+    label: str = Field(min_length=1, max_length=100)
+    kind: Literal[
+        "bedroom", "kitchen", "bathroom", "living_room", "dining_room",
+        "balcony", "storage", "corridor", "office", "shop", "shared", "other",
+    ] = "other"
+    rentable_unit_id: UUID | None = None
+    order: int = Field(default=0, ge=0, le=10000)
+    x: int | None = Field(default=None, ge=0, le=1000)
+    y: int | None = Field(default=None, ge=0, le=1000)
+    width: int | None = Field(default=None, ge=10, le=1000)
+    height: int | None = Field(default=None, ge=10, le=1000)
+    rotation: int | None = Field(default=None, ge=-180, le=180)
+
+
 class LayoutLevel(BaseModel):
     id: str = Field(min_length=1, max_length=80)
     label: str = Field(min_length=1, max_length=100)
     order: int = Field(ge=0, le=100)
+    spaces: list[LayoutSpace] = Field(default_factory=list, max_length=1000)
 
 
 class LayoutFace(BaseModel):
@@ -91,8 +113,13 @@ class LayoutSection(BaseModel):
     id: str = Field(min_length=1, max_length=80)
     name: str = Field(min_length=1, max_length=120)
     kind: Literal["block", "wing", "entrance", "standalone"] = "block"
-    levels: list[LayoutLevel] = Field(default_factory=list, max_length=30)
-    faces: list[LayoutFace] = Field(default_factory=list, max_length=10)
+    x: int | None = Field(default=None, ge=0, le=1000)
+    y: int | None = Field(default=None, ge=0, le=1000)
+    width: int | None = Field(default=None, ge=10, le=1000)
+    height: int | None = Field(default=None, ge=10, le=1000)
+    rotation: int | None = Field(default=None, ge=-180, le=180)
+    levels: list[LayoutLevel] = Field(default_factory=list, max_length=500)
+    faces: list[LayoutFace] = Field(default_factory=list, max_length=100)
 
 
 class UnitPlacement(BaseModel):
@@ -101,13 +128,18 @@ class UnitPlacement(BaseModel):
     level_id: str = Field(min_length=1, max_length=80)
     face_id: str = Field(min_length=1, max_length=80)
     position: int = Field(ge=0, le=10000)
+    x: int | None = Field(default=None, ge=0, le=1000)
+    y: int | None = Field(default=None, ge=0, le=1000)
+    width: int | None = Field(default=None, ge=10, le=1000)
+    height: int | None = Field(default=None, ge=10, le=1000)
+    rotation: int | None = Field(default=None, ge=-180, le=180)
 
 
 class PropertyLayoutConfig(BaseModel):
     version: Literal[1] = 1
     building_type: Literal["hostel", "apartment", "building", "house", "commercial", "mixed_use", "compound"] = "building"
-    sections: list[LayoutSection] = Field(default_factory=list, max_length=30)
-    placements: list[UnitPlacement] = Field(default_factory=list, max_length=5000)
+    sections: list[LayoutSection] = Field(default_factory=list, max_length=1000)
+    placements: list[UnitPlacement] = Field(default_factory=list, max_length=50000)
 
     @model_validator(mode="after")
     def validate_references(self):
@@ -118,12 +150,38 @@ class PropertyLayoutConfig(BaseModel):
         placement_ids = [placement.unit_id for placement in self.placements]
         if len(placement_ids) != len(set(placement_ids)):
             raise ValueError("Each unit may have only one layout placement")
+        space_ids: list[str] = []
+        total_levels = 0
         for section in self.sections:
+            total_levels += len(section.levels)
+            if total_levels > 10000:
+                raise ValueError("A property layout may contain at most 10000 levels")
             level_ids = [level.id for level in section.levels]
             face_ids = [face.id for face in section.faces]
             if len(level_ids) != len(set(level_ids)) or len(face_ids) != len(set(face_ids)):
                 raise ValueError("Level and face IDs must be unique within a section")
+            for level in section.levels:
+                space_ids.extend(space.id for space in level.spaces)
+        if len(space_ids) > 50000:
+            raise ValueError("A property layout may contain at most 50000 internal spaces")
+        if len(space_ids) != len(set(space_ids)):
+            raise ValueError("Internal space IDs must be unique within a property")
+        for section in self.sections:
+            if section.x is not None and section.width is not None and section.x + section.width > 1000:
+                raise ValueError(f"Section {section.id} extends beyond the layout width")
+            if section.y is not None and section.height is not None and section.y + section.height > 1000:
+                raise ValueError(f"Section {section.id} extends beyond the layout height")
+            for level in section.levels:
+                for space in level.spaces:
+                    if space.x is not None and space.width is not None and space.x + space.width > 1000:
+                        raise ValueError(f"Internal space {space.id} extends beyond the layout width")
+                    if space.y is not None and space.height is not None and space.y + space.height > 1000:
+                        raise ValueError(f"Internal space {space.id} extends beyond the layout height")
         for placement in self.placements:
+            if placement.x is not None and placement.width is not None and placement.x + placement.width > 1000:
+                raise ValueError(f"Unit {placement.unit_id} extends beyond the layout width")
+            if placement.y is not None and placement.height is not None and placement.y + placement.height > 1000:
+                raise ValueError(f"Unit {placement.unit_id} extends beyond the layout height")
             section = section_map.get(placement.section_id)
             if section is None:
                 raise ValueError(f"Unknown section: {placement.section_id}")

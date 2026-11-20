@@ -36,6 +36,8 @@ class PropertyType(str, Enum):
     BUILDING = "building"
     HOUSE = "house"
     COMMERCIAL = "commercial"
+    MIXED_USE = "mixed_use"
+    COMPOUND = "compound"
 
 
 class UnitType(str, Enum):

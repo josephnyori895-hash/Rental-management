@@ -81,8 +81,19 @@ function PageWrapper({ children, viewKey }: { children: React.ReactNode; viewKey
 
 export default function App() {
   const [token, setToken] = useState<string | null>(getToken());
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 1024);
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1024);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    const syncViewport = () => {
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
+      setSidebarOpen(!mobile);
+    };
+    window.addEventListener("resize", syncViewport);
+    return () => window.removeEventListener("resize", syncViewport);
+  }, []);
   const role = token ? decodeRole() : null;
 
   useEffect(() => {
@@ -186,7 +197,7 @@ export default function App() {
 
   const logout = () => { clearToken(); setToken(null); };
 
-  const goTo = (v: View) => { setView(v); setSidebarOpen(true); };
+  const goTo = (v: View) => { setView(v); setSidebarOpen(!isMobile); };
 
   const sidebarWidth = sidebarCollapsed ? 64 : 240;
 
@@ -198,10 +209,10 @@ export default function App() {
         {sidebarOpen && (
           <motion.aside
             initial={{ x: -240, opacity: 0 }}
-            animate={{ x: 0, opacity: 1, width: sidebarWidth }}
+            animate={{ x: 0, opacity: 1, width: isMobile ? 288 : sidebarWidth }}
             exit={{ x: -240, opacity: 0 }}
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            className="shrink-0 bg-slate-900/80 backdrop-blur-2xl border-r border-white/[0.06] flex flex-col fixed h-full z-40"
+            className="shrink-0 bg-[#0a1724]/95 backdrop-blur-2xl border-r border-white/[0.07] flex flex-col fixed h-full z-50 shadow-[20px_0_70px_rgba(0,0,0,.25)]"
           >
             <div className="px-3 py-4 flex items-center gap-2.5 border-b border-white/[0.04] h-14">
               <div className="w-8 h-8 shrink-0 rounded-lg bg-gradient-to-br from-emerald-400 to-sky-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
@@ -349,7 +360,11 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <div className="flex-1 min-w-0" style={{ marginLeft: sidebarOpen ? sidebarWidth : 0 }}>
+      {sidebarOpen && isMobile && (
+        <button aria-label="Close navigation" onClick={() => setSidebarOpen(false)} className="fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-[2px] lg:hidden" />
+      )}
+
+      <div className="flex-1 min-w-0" style={{ marginLeft: sidebarOpen && !isMobile ? sidebarWidth : 0 }}>
         {!sidebarOpen && (
           <motion.button
             initial={{ opacity: 0 }}
@@ -360,7 +375,21 @@ export default function App() {
             <Menu className="w-4 h-4" />
           </motion.button>
         )}
-        <main className="p-4 md:p-6 max-w-7xl mx-auto">
+        <main className="mx-auto min-h-screen max-w-[1600px] px-4 pb-8 pt-4 sm:px-6 lg:px-8">
+          <header className="sticky top-0 z-30 -mx-4 mb-6 flex min-h-[68px] items-center justify-between border-b border-white/[0.06] bg-[#07111c]/85 px-4 backdrop-blur-xl sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+            <div className="flex min-w-0 items-center gap-3">
+              {isMobile && (
+                <button onClick={() => setSidebarOpen(true)} aria-label="Open navigation" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]">
+                  <Menu className="h-4 w-4" />
+                </button>
+              )}
+              <div className="min-w-0">
+                <p className="truncate text-[10px] font-semibold uppercase tracking-[.2em] text-emerald-300">Rental OS workspace</p>
+                <p className="truncate text-sm font-semibold text-white">{NAV.find((item) => item.key === view)?.label || (view === "tenant" ? "Tenant details" : "Workspace")}</p>
+              </div>
+            </div>
+            <div className="hidden items-center gap-2 text-[11px] text-slate-500 sm:flex"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300" /> Property operations</div>
+          </header>
           <PageWrapper viewKey={view}>
             {view === "overview" && <Overview />}
             {view === "properties" && <Properties />}
