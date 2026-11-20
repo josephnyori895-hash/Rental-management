@@ -141,8 +141,8 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
       level_id: existing?.section_id === sectionId ? existing.level_id : section.levels[0].id,
       face_id: existing?.section_id === sectionId ? existing.face_id : section.faces[0].id,
       position: existing?.position ?? config.placements.length,
-      x: existing?.x ?? 40 + (config.placements.length % 4) * 220,
-      y: existing?.y ?? 40 + Math.floor(config.placements.length / 4) * 180,
+      x: existing?.x ?? Math.min(810, 40 + (config.placements.length % 4) * 220),
+      y: existing?.y ?? Math.min(850, 40 + Math.floor(config.placements.length / 4) * 180),
       width: existing?.width ?? 190,
       height: existing?.height ?? 150,
       rotation: existing?.rotation ?? 0,
@@ -206,7 +206,7 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
   const addSpace = (sectionId: string, levelId: string) => updateSection(sectionId, (section) => ({
     ...section,
     levels: section.levels.map((level) => level.id === levelId
-      ? { ...level, spaces: [...(level.spaces ?? []), { id: newId(), label: "New room", kind: "other", rentable_unit_id: null, order: level.spaces?.length ?? 0, x: 40 + ((level.spaces?.length ?? 0) % 4) * 220, y: 40 + Math.floor((level.spaces?.length ?? 0) / 4) * 180, width: 180, height: 140, rotation: 0 }] }
+      ? { ...level, spaces: [...(level.spaces ?? []), { id: newId(), label: "New room", kind: "other", rentable_unit_id: null, order: level.spaces?.length ?? 0, x: Math.min(820, 40 + ((level.spaces?.length ?? 0) % 4) * 220), y: Math.min(860, 40 + Math.floor((level.spaces?.length ?? 0) / 4) * 180), width: 180, height: 140, rotation: 0 }] }
       : level),
   }));
 
