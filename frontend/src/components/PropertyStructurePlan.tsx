@@ -14,6 +14,11 @@ type InternalSpace = {
   label: string;
   kind: string;
   rentable_unit_id?: string | null;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  rotation?: number;
 };
 
 type Level = {
@@ -148,10 +153,10 @@ export default function PropertyStructurePlan({
                             <span className="absolute left-2 top-2 text-[9px] uppercase tracking-wider text-slate-600">Schematic · editable proportions</span>
                             {levelUnits.map((unit, index) => {
                               const placement = levelPlacements.find((item) => item.unit_id === unit.id);
-                              const x = placement?.x ?? 30 + (index % 4) * 220;
-                              const y = placement?.y ?? 40 + Math.floor(index / 4) * 180;
                               const width = placement?.width ?? 190;
                               const height = placement?.height ?? 150;
+                              const x = Math.min(1000 - width, placement?.x ?? 30 + (index % 4) * 220);
+                              const y = Math.min(1000 - height, placement?.y ?? 40 + Math.floor(index / 4) * 180);
                               const rotation = placement?.rotation ?? 0;
                               return <div key={unit.id} className="absolute" style={{ left: `${Math.min(100, x / 10)}%`, top: `${Math.min(100, y / 10)}%`, width: `${Math.min(100, width / 10)}%`, height: `${Math.min(100, height / 10)}%`, transform: `rotate(${rotation}deg)`, transformOrigin: "center" }}>{unitCard(unit)}</div>;
                             })}
@@ -165,10 +170,10 @@ export default function PropertyStructurePlan({
                             <div className="relative min-h-[150px] overflow-hidden rounded-lg border border-slate-800 bg-slate-950/70">
                               {spaces.map((space, index) => {
                                 const containingUnit = space.rentable_unit_id ? unitById.get(space.rentable_unit_id) : undefined;
-                                const x = space.x ?? 20 + (index % 4) * 220;
-                                const y = space.y ?? 20 + Math.floor(index / 4) * 160;
                                 const width = space.width ?? 180;
                                 const height = space.height ?? 120;
+                                const x = Math.min(1000 - width, space.x ?? 20 + (index % 4) * 220);
+                                const y = Math.min(1000 - height, space.y ?? 20 + Math.floor(index / 4) * 160);
                                 return <div key={space.id} className="absolute flex items-center justify-center overflow-hidden rounded-md border border-sky-500/30 bg-sky-500/10 px-1 text-center text-[9px] text-slate-300" style={{ left: `${Math.min(100, x / 10)}%`, top: `${Math.min(100, y / 10)}%`, width: `${Math.min(100, width / 10)}%`, height: `${Math.min(100, height / 10)}%`, transform: `rotate(${space.rotation ?? 0}deg)` }} title={`${kindLabel(space.kind)}${containingUnit ? ` · ${containingUnit.unit_number}` : " · shared"}`}>{space.label}</div>;
                               })}
                             </div>
