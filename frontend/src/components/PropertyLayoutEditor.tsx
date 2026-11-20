@@ -22,6 +22,11 @@ type LayoutSection = {
   id: string;
   name: string;
   kind: "block" | "wing" | "entrance" | "standalone";
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  rotation?: number;
   levels: LayoutLevel[];
   faces: LayoutFace[];
 };
@@ -123,7 +128,14 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
   const addSection = (kind: LayoutSection["kind"] = "block") => {
     const index = config.sections.length + 1;
     const name = kind === "standalone" ? `House ${index}` : kind === "wing" ? `Wing ${index}` : `Block ${index}`;
-    const section = makeSection(name, kind);
+    const section = {
+      ...makeSection(name, kind),
+      x: Math.min(720, 40 + ((index - 1) % 3) * 310),
+      y: Math.min(720, 40 + Math.floor((index - 1) / 3) * 310),
+      width: 260,
+      height: 260,
+      rotation: 0,
+    };
     setConfig((current) => ({ ...current, sections: [...current.sections, section] }));
     setSavedMessage("");
   };
@@ -308,6 +320,24 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
                   <button type="button" onClick={() => addSection("standalone")} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800"><Plus className="h-4 w-4" /> Add standalone house</button>
                 </div>
               </div>
+
+              {config.sections.length > 0 && (
+                <section className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/50 p-3 sm:p-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">Arrange the property site</h3>
+                    <p className="mt-1 text-xs text-slate-500">Move and resize blocks, wings and standalone buildings to reflect how they sit on the site.</p>
+                  </div>
+                  <PropertyLayoutCanvas
+                    items={config.sections.map((section, index) => ({
+                      id: `section:${section.id}`, label: section.name, kind: "section" as const,
+                      x: Math.min(1000 - (section.width ?? 260), section.x ?? Math.min(720, 40 + (index % 3) * 310)),
+                      y: Math.min(1000 - (section.height ?? 260), section.y ?? Math.min(720, 40 + Math.floor(index / 3) * 310)),
+                      width: section.width ?? 260, height: section.height ?? 260, rotation: section.rotation ?? 0,
+                    }))}
+                    onGeometryChange={(id, geometry) => updateSection(id.slice(8), (section) => ({ ...section, ...geometry }))}
+                  />
+                </section>
+              )}
 
               {config.sections.length === 0 && (
                 <div className="rounded-xl border border-dashed border-slate-700 p-8 text-center">
