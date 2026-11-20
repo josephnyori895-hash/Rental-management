@@ -3,7 +3,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from app.properties.schemas import PropertyLayoutConfig
+from app.properties.schemas import PropertyCreate, PropertyLayoutConfig
 
 
 def test_property_layout_config_accepts_multiple_faces_and_unit_placements():
@@ -122,3 +122,28 @@ def test_property_layout_config_rejects_duplicate_internal_space_ids():
             }],
             "placements": [],
         })
+
+
+
+@pytest.mark.parametrize("property_type", ["mixed_use", "compound"])
+def test_property_create_accepts_flexible_property_types(property_type):
+    payload = PropertyCreate(name="Flexible site", property_type=property_type)
+    assert payload.property_type == property_type
+
+
+def test_property_layout_config_supports_many_sections_and_levels():
+    sections = [
+        {
+            "id": f"block-{block_index}",
+            "name": f"Block {block_index}",
+            "levels": [
+                {"id": f"level-{level_index}", "label": f"Level {level_index}", "order": level_index}
+                for level_index in range(40)
+            ],
+            "faces": [],
+        }
+        for block_index in range(40)
+    ]
+    config = PropertyLayoutConfig.model_validate({"building_type": "compound", "sections": sections})
+    assert len(config.sections) == 40
+    assert sum(len(section.levels) for section in config.sections) == 1600
