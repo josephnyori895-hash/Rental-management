@@ -167,6 +167,15 @@ export default function PlatformAdminConsole() {
     </main>
   );
 
+  if (loading) return (
+    <main className="grid min-h-screen place-items-center bg-[#07111f] text-slate-300">
+      <div className="flex items-center gap-3 text-sm">
+        <span className="h-5 w-5 animate-spin rounded-full border-2 border-emerald-300/30 border-t-emerald-300" />
+        Loading platform workspace…
+      </div>
+    </main>
+  );
+
   return (
     <main className="min-h-screen bg-[#07111f] text-slate-100">
       <header className="border-b border-white/10 bg-slate-950/70 px-6 py-4">
