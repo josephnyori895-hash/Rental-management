@@ -44,7 +44,7 @@ try {
         await home.getByRole("link", { name: /Create workspace/i }).first().waitFor();
         if (viewport.width < 768) {
           await home.getByRole("button", { name: "Open menu" }).click();
-          await home.getByRole("link", { name: "Capabilities" }).waitFor();
+          await home.getByRole("link", { name: "Capabilities", exact: true }).waitFor();
         }
         await home.screenshot({ path: `artifacts/landing-${viewport.width}.png`, fullPage: true });
         if (viewport.width === 390) {
@@ -61,7 +61,7 @@ try {
     const login = await inspectPage("/login", viewport, `login ${label}`);
     if (login) {
       try {
-        const password = login.getByLabel("Password");
+        const password = login.getByLabel("Password", { exact: true });
         await password.fill("example-password");
         await login.getByRole("button", { name: "Show password" }).click();
         assert.equal(await password.getAttribute("type"), "text");
