@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
-  ArrowRight, ArrowUpRight, Building2, Check, ChevronDown, ChevronLeft,
-  ChevronRight, CircleDollarSign, ClipboardCheck, Clock3, Layers3, Menu,
+  ArrowRight, ArrowUpRight, Building2, ChevronDown, CircleDollarSign,
+  ClipboardCheck, Layers3, Menu,
   ShieldCheck, Sparkles, Users, Wrench, X,
 } from "lucide-react";
 
