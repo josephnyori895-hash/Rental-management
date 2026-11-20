@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, type PointerEvent } from "react";
 
 export type LayoutGeometry = {
   x: number;
@@ -33,7 +33,7 @@ export default function PropertyLayoutCanvas({ items, onGeometryChange }: Props)
   const gesture = useRef<Gesture | null>(null);
 
   const begin = (
-    event: React.PointerEvent<HTMLElement>,
+    event: PointerEvent<HTMLElement>,
     item: LayoutCanvasItem,
     mode: Gesture["mode"],
   ) => {
@@ -54,7 +54,7 @@ export default function PropertyLayoutCanvas({ items, onGeometryChange }: Props)
     };
   };
 
-  const move = (event: React.PointerEvent<HTMLElement>) => {
+  const move = (event: PointerEvent<HTMLElement>) => {
     const active = gesture.current;
     const bounds = canvasRef.current?.getBoundingClientRect();
     if (!active || active.pointerId !== event.pointerId || !bounds?.width || !bounds.height) return;
@@ -73,7 +73,7 @@ export default function PropertyLayoutCanvas({ items, onGeometryChange }: Props)
     }
   };
 
-  const end = (event: React.PointerEvent<HTMLElement>) => {
+  const end = (event: PointerEvent<HTMLElement>) => {
     if (gesture.current?.pointerId === event.pointerId) gesture.current = null;
   };
 
@@ -99,7 +99,7 @@ export default function PropertyLayoutCanvas({ items, onGeometryChange }: Props)
             }}
           >
             <div
-              role="button"
+              role="group"
               tabIndex={0}
               aria-label={`Move ${item.label}`}
               onPointerDown={(event) => begin(event, item, "move")}
@@ -122,16 +122,26 @@ export default function PropertyLayoutCanvas({ items, onGeometryChange }: Props)
             >
               {item.label}
             </div>
-            <div
-              role="button"
-              tabIndex={0}
+            <button
+              type="button"
               aria-label={`Resize ${item.label}`}
               onPointerDown={(event) => begin(event, item, "resize")}
               onPointerMove={move}
               onPointerUp={end}
               onPointerCancel={end}
+              onKeyDown={(event) => {
+                const step = event.shiftKey ? 25 : 5;
+                const delta = event.key === "ArrowLeft" ? { width: -step } : event.key === "ArrowRight" ? { width: step } : event.key === "ArrowUp" ? { height: -step } : event.key === "ArrowDown" ? { height: step } : null;
+                if (delta) {
+                  event.preventDefault();
+                  onGeometryChange(item.id, {
+                    width: Math.max(10, Math.min(1000 - item.x, item.width + (delta.width ?? 0))),
+                    height: Math.max(10, Math.min(1000 - item.y, item.height + (delta.height ?? 0))),
+                  });
+                }
+              }}
               className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize rounded-tl border-l border-t border-white/30 bg-white/20"
-              title="Drag to resize"
+              title="Drag to resize or use arrow keys"
             />
           </div>
         ))}
