@@ -29,6 +29,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("email", name="uq_platform_admins_email"),
     )
     op.create_index("ix_platform_admins_created_at", "platform_admins", ["created_at"])
+    op.create_index("ix_platform_admins_id", "platform_admins", ["id"])
 
 
 def downgrade() -> None:

@@ -64,7 +64,7 @@ export default function SubscriptionPage() {
     if (!window.confirm(sub.status === "draft" ? "Cancel this unpaid plan selection and void its open Rental OS invoice?" : "Schedule this subscription to end at the end of the current paid period?")) return;
     setBusy(true); setError(""); setNotice("");
     try {
-      const result = await api(\`/subscriptions/\${sub.id}/cancel\`, "POST");
+      const result = await api(`/subscriptions/${sub.id}/cancel`, "POST");
       setNotice(result.notice || "Cancellation request saved.");
       await refresh();
     } catch (e: any) { setError(e.message || "Could not cancel subscription"); }

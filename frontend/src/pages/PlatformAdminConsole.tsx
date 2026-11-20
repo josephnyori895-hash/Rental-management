@@ -8,6 +8,8 @@ type CatalogItem = {
   item_type: "package" | "addon"; pricing_model: string; active: boolean;
   currency?: string | null; amount?: string | null; included_units?: number | null;
   per_unit_amount?: string | null; effective_from?: string | null;
+  billing_interval?: string | null; display_order?: number | null;
+  features?: Record<string, unknown> | null;
 };
 
 async function request(path: string, token: string, method = "GET", body?: unknown) {
@@ -203,7 +205,7 @@ export default function PlatformAdminConsole() {
                 try { features = JSON.parse(editItem.features || "{}"); }
                 catch { throw new Error("Feature entitlements must be valid JSON."); }
                 if (!features || Array.isArray(features) || typeof features !== "object") throw new Error("Feature entitlements must be a JSON object.");
-                await request(\`/subscriptions/admin/catalogue/\${selectedId}\`, token, "PUT", {
+                await request(`/subscriptions/admin/catalogue/${selectedId}`, token, "PUT", {
                   name: editItem.name, description: editItem.description, features,
                   active: editItem.active, display_order: Number(editItem.display_order),
                 });

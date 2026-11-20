@@ -47,13 +47,14 @@ def upgrade() -> None:
     )
     op.create_index("ix_subscription_invoice_lines_created_at", "subscription_invoice_lines", ["created_at"])
     op.create_index("ix_subscription_invoice_lines_invoice_id", "subscription_invoice_lines", ["invoice_id"])
+    op.create_index("ix_subscription_invoice_lines_id", "subscription_invoice_lines", ["id"])
     op.execute("""
         CREATE FUNCTION prevent_subscription_invoice_line_mutation()
-        RETURNS trigger AS $
+        RETURNS trigger AS $$
         BEGIN
             RAISE EXCEPTION 'subscription invoice lines are immutable';
         END;
-        $ LANGUAGE plpgsql;
+        $$ LANGUAGE plpgsql;
     """)
     op.execute("""
         CREATE TRIGGER subscription_invoice_lines_immutable
@@ -73,6 +74,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_business_subscription_events_business_id", "business_subscription_events", ["business_id"])
     op.create_index("ix_business_subscription_events_subscription_id", "business_subscription_events", ["subscription_id"])
+    op.create_index("ix_business_subscription_events_id", "business_subscription_events", ["id"])
     op.create_index("ix_business_subscription_event_subscription", "business_subscription_events", ["subscription_id", "created_at"])
     op.create_index("ix_business_subscription_event_business", "business_subscription_events", ["business_id", "created_at"])
     op.execute("""

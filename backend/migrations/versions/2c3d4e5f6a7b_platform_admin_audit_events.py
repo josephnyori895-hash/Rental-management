@@ -29,6 +29,7 @@ def upgrade() -> None:
         sa.Column("user_agent", sa.String(512), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     )
+    op.create_index("ix_platform_admin_events_id", "platform_admin_events", ["id"])
     op.create_index("ix_platform_admin_event_actor_created", "platform_admin_events", ["admin_id", "created_at"])
     op.create_index("ix_platform_admin_event_action_created", "platform_admin_events", ["action", "created_at"])
     op.execute("""

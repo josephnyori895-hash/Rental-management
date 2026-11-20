@@ -35,6 +35,7 @@ def upgrade() -> None:
         sa.CheckConstraint("pricing_model IN ('flat_recurring', 'per_billable_unit', 'one_time')", name="pricing_model"),
         sa.CheckConstraint("code ~ '^[a-z0-9][a-z0-9_-]*$'", name="code_format"),
     )
+    op.create_index("ix_subscription_catalog_items_id", "subscription_catalog_items", ["id"])
     op.create_index("ix_subscription_catalog_items_created_at", "subscription_catalog_items", ["created_at"])
     op.create_table(
         "subscription_price_versions",
@@ -60,6 +61,7 @@ def upgrade() -> None:
     op.create_index("ix_subscription_price_versions_created_at", "subscription_price_versions", ["created_at"])
     op.create_index("ix_subscription_price_versions_catalog_item_id", "subscription_price_versions", ["catalog_item_id"])
     op.create_index("ix_subscription_price_item_effective", "subscription_price_versions", ["catalog_item_id", "effective_from", "effective_to"])
+    op.create_index("ix_subscription_price_versions_id", "subscription_price_versions", ["id"])
     op.create_table(
         "business_subscriptions",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -83,6 +85,7 @@ def upgrade() -> None:
     op.create_index("ix_business_subscriptions_created_at", "business_subscriptions", ["created_at"])
     op.create_index("ix_business_subscriptions_business_id", "business_subscriptions", ["business_id"])
     op.create_index("ix_business_subscription_status", "business_subscriptions", ["business_id", "status"])
+    op.create_index("ix_business_subscriptions_id", "business_subscriptions", ["id"])
     op.create_table(
         "business_subscription_items",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -114,6 +117,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_business_subscription_items_created_at", "business_subscription_items", ["created_at"])
     op.create_index("ix_business_subscription_items_subscription_id", "business_subscription_items", ["subscription_id"])
+    op.create_index("ix_business_subscription_items_id", "business_subscription_items", ["id"])
     op.create_table(
         "subscription_invoices",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -139,6 +143,7 @@ def upgrade() -> None:
     op.create_index("ix_subscription_invoices_created_at", "subscription_invoices", ["created_at"])
     op.create_index("ix_subscription_invoices_business_id", "subscription_invoices", ["business_id"])
     op.create_index("ix_subscription_invoices_subscription_id", "subscription_invoices", ["subscription_id"])
+    op.create_index("ix_subscription_invoices_id", "subscription_invoices", ["id"])
     op.create_table(
         "subscription_payments",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -160,6 +165,7 @@ def upgrade() -> None:
     op.create_index("ix_subscription_payments_created_at", "subscription_payments", ["created_at"])
     op.create_index("ix_subscription_payments_business_id", "subscription_payments", ["business_id"])
     op.create_index("ix_subscription_payments_invoice_id", "subscription_payments", ["invoice_id"])
+    op.create_index("ix_subscription_payments_id", "subscription_payments", ["id"])
 
     # All CHECK constraints are inline in the `op.create_table` calls above so
     # that the names SQLAlchemy renders from the model and the names PostgreSQL
