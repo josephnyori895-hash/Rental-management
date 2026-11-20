@@ -9,6 +9,11 @@ type LayoutSpace = {
   kind: "bedroom" | "kitchen" | "bathroom" | "living_room" | "dining_room" | "balcony" | "storage" | "corridor" | "office" | "shop" | "shared" | "other";
   rentable_unit_id?: string | null;
   order: number;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  rotation?: number;
 };
 type LayoutLevel = { id: string; label: string; order: number; spaces: LayoutSpace[] };
 type LayoutFace = { id: string; label: string; orientation: Orientation };
@@ -25,6 +30,11 @@ type UnitPlacement = {
   level_id: string;
   face_id: string;
   position: number;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  rotation?: number;
 };
 type LayoutConfig = {
   version: 1;
@@ -131,6 +141,11 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
       level_id: existing?.section_id === sectionId ? existing.level_id : section.levels[0].id,
       face_id: existing?.section_id === sectionId ? existing.face_id : section.faces[0].id,
       position: existing?.position ?? config.placements.length,
+      x: existing?.x ?? 40 + (config.placements.length % 4) * 220,
+      y: existing?.y ?? 40 + Math.floor(config.placements.length / 4) * 180,
+      width: existing?.width ?? 190,
+      height: existing?.height ?? 150,
+      rotation: existing?.rotation ?? 0,
     };
     setConfig((current) => ({
       ...current,
@@ -140,11 +155,11 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
     setSavedMessage("");
   };
 
-  const updatePlacement = (unitId: string, field: "level_id" | "face_id" | "position", value: string) => {
+  const updatePlacement = (unitId: string, field: "level_id" | "face_id" | "position" | "x" | "y" | "width" | "height" | "rotation", value: string) => {
     setConfig((current) => ({
       ...current,
       placements: current.placements.map((p) => p.unit_id === unitId
-        ? { ...p, [field]: field === "position" ? Number(value) || 0 : value }
+        ? { ...p, [field]: field === "level_id" || field === "face_id" ? value : Number(value) || 0 }
         : p),
     }));
     setSavedMessage("");
@@ -191,17 +206,19 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
   const addSpace = (sectionId: string, levelId: string) => updateSection(sectionId, (section) => ({
     ...section,
     levels: section.levels.map((level) => level.id === levelId
-      ? { ...level, spaces: [...(level.spaces ?? []), { id: newId(), label: "New room", kind: "other", rentable_unit_id: null, order: level.spaces?.length ?? 0 }] }
+      ? { ...level, spaces: [...(level.spaces ?? []), { id: newId(), label: "New room", kind: "other", rentable_unit_id: null, order: level.spaces?.length ?? 0, x: 40 + ((level.spaces?.length ?? 0) % 4) * 220, y: 40 + Math.floor((level.spaces?.length ?? 0) / 4) * 180, width: 180, height: 140, rotation: 0 }] }
       : level),
   }));
 
-  const updateSpace = (sectionId: string, levelId: string, spaceId: string, patch: Partial<LayoutSpace>) =>
+  const updateSpace = (sectionId: string, levelId: string, spaceId: string, patch: Partial<LayoutSpace>) => {
     updateSection(sectionId, (section) => ({
       ...section,
       levels: section.levels.map((level) => level.id === levelId
         ? { ...level, spaces: (level.spaces ?? []).map((space) => space.id === spaceId ? { ...space, ...patch } : space) }
         : level),
     }));
+    setSavedMessage("");
+  };
 
   const removeSpace = (sectionId: string, levelId: string, spaceId: string) =>
     updateSection(sectionId, (section) => ({
@@ -310,6 +327,9 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
                                 {rooms.map((room) => <option key={room.id} value={room.id}>Inside {room.unit_number}</option>)}
                               </select>
                               <button type="button" onClick={() => removeSpace(section.id, level.id, space.id)} aria-label={`Remove ${space.label}`} className="rounded-lg border border-rose-500/20 px-2 text-rose-300 hover:bg-rose-500/10"><Trash2 className="h-3.5 w-3.5" /></button>
+                              <div className="grid grid-cols-5 gap-1 sm:col-span-4">
+                                {(["x", "y", "width", "height", "rotation"] as const).map((field) => <label key={field} className="text-[9px] capitalize text-slate-500">{field}<input type="number" min={field === "rotation" ? -180 : field === "width" || field === "height" ? 10 : 0} max={field === "rotation" ? 180 : 1000} value={space[field] ?? (field === "width" || field === "height" ? 160 : 0)} onChange={(event) => updateSpace(section.id, level.id, space.id, { [field]: Number(event.target.value) } as Partial<LayoutSpace>)} className="mt-1 w-full rounded border border-slate-800 bg-slate-950 px-1.5 py-1 text-[10px] text-slate-200" /></label>)}
+                              </div>
                             </div>
                           ))}
                           {(level.spaces ?? []).length === 0 && <p className="text-[10px] text-slate-600">No internal rooms defined for this level yet.</p>}
@@ -334,7 +354,9 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
                     <select value={placement?.section_id ?? ""} onChange={(event) => assignUnit(room.id, event.target.value)} aria-label={`Block for unit ${room.unit_number}`} className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-xs text-slate-200"><option value="">Not mapped</option>{config.sections.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
                     <select value={placement?.level_id ?? ""} disabled={!section} onChange={(event) => updatePlacement(room.id, "level_id", event.target.value)} aria-label={`Floor for unit ${room.unit_number}`} className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-xs text-slate-200"><option value="">Choose floor</option>{section?.levels.map((level) => <option key={level.id} value={level.id}>{level.label}</option>)}</select>
                     <select value={placement?.face_id ?? ""} disabled={!section} onChange={(event) => updatePlacement(room.id, "face_id", event.target.value)} aria-label={`Face for unit ${room.unit_number}`} className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-xs text-slate-200"><option value="">Choose face</option>{section?.faces.map((face) => <option key={face.id} value={face.id}>{face.label}</option>)}</select>
-                    {placement && <label className="flex items-center gap-2 text-[10px] text-slate-500 md:col-span-4">Position on face<input type="number" min="0" max="10000" value={placement.position} onChange={(event) => updatePlacement(room.id, "position", event.target.value)} className="w-24 rounded-lg border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-white" /></label>}
+                    {placement && <div className="grid grid-cols-3 gap-2 md:col-span-4 lg:grid-cols-6">
+                      {(["x", "y", "width", "height", "rotation", "position"] as const).map((field) => <label key={field} className="text-[10px] capitalize text-slate-500">{field === "x" || field === "y" ? `${field} · 0–1000` : field === "rotation" ? "Rotation · °" : field === "position" ? "Sort order" : `${field} · 10–1000`}<input type="number" min={field === "rotation" ? -180 : field === "position" || field === "x" || field === "y" ? 0 : 10} max={field === "rotation" ? 180 : field === "position" ? 10000 : 1000} value={placement[field] ?? (field === "width" || field === "height" ? 180 : 0)} onChange={(event) => updatePlacement(room.id, field, event.target.value)} className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-white" /></label>)}
+                    </div>}
                   </div>;
                 })}
               </section>
