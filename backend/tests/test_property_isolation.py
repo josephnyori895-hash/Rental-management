@@ -163,6 +163,26 @@ async def test_layout_rejects_a_unit_from_another_property(client, businesses):
 
 
 @requires_db
+async def test_layout_rejects_an_internal_space_linked_to_another_property(client, businesses):
+    first, second = businesses
+    body = _layout_body(str(first.unit.id))
+    body["layout_config"]["placements"] = []
+    body["layout_config"]["sections"][0]["levels"][0]["spaces"] = [{
+        "id": "foreign-bedroom",
+        "label": "Foreign bedroom",
+        "kind": "bedroom",
+        "rentable_unit_id": str(second.unit.id),
+    }]
+
+    res = await client.put(
+        f"/api/v1/properties/{first.property.id}/layout",
+        json=body,
+        headers=first.bearer,
+    )
+    assert res.status_code == 422, res.text
+
+
+@requires_db
 async def test_caretaker_can_be_assigned_and_unassigned(client, businesses):
     first, _ = businesses
 
