@@ -41,7 +41,8 @@ export default function PlatformAdminConsole() {
   const [platformInvoices, setPlatformInvoices] = useState<any[]>([]);
   const [platformPayments, setPlatformPayments] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState("");
-  const [busy, setBusy] = useState(false);\n  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [newItem, setNewItem] = useState({ code: "", name: "", item_type: "package", pricing_model: "flat_recurring", description: "", features: "{\n  \n}" });
