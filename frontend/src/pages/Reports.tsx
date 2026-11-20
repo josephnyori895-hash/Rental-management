@@ -41,6 +41,7 @@ export default function Reports() {
   const [loading, setLoading] = useState(true);
   const [dispatching, setDispatching] = useState(false);
   const [dispatchResult, setDispatchResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [loadError, setLoadError] = useState("");
 
   // Load properties for filter
   useEffect(() => {
@@ -57,8 +58,7 @@ export default function Reports() {
     // Last day of month
     const lastDay = new Date(y, m, 0).getDate();
     const to = `${y}-${String(m).padStart(2, "0")}-${lastDay}`;
-    const propParam = selectedProp || undefined;
-
+    setLoadError("");
     Promise.all([
       getOwnerStatement(from, to),
       getCollectionTrend(12),
@@ -68,8 +68,11 @@ export default function Reports() {
         setTrend(tr || []);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
-  }, [month, selectedProp]);
+      .catch((error) => {
+        setLoadError(error?.message || "The owner statement could not be loaded.");
+        setLoading(false);
+      });
+  }, [month]);
 
   // ── Export PDF ────────────────────────────────────────────────────────────
   const exportPdf = async () => {
@@ -204,11 +207,11 @@ export default function Reports() {
         title="Reports"
         sub="Owner statements, P&L & monthly financial dispatch"
         actions={
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
             <button
               onClick={handleSendReport}
               disabled={dispatching}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-500/15 text-violet-300 border border-violet-500/30 hover:bg-violet-500/25 disabled:opacity-50 transition"
+              className="flex items-center justify-center gap-1.5 min-h-10 px-3 py-2 rounded-xl text-xs font-medium bg-violet-500/15 text-violet-300 border border-violet-500/30 hover:bg-violet-500/25 disabled:opacity-50 transition"
             >
               {dispatching
                 ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -217,13 +220,13 @@ export default function Reports() {
             </button>
             <button
               onClick={exportPdf}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500/15 text-sky-300 border border-sky-500/30 hover:bg-sky-500/25 transition"
+              className="flex items-center justify-center gap-1.5 min-h-10 px-3 py-2 rounded-xl text-xs font-medium bg-sky-500/15 text-sky-300 border border-sky-500/30 hover:bg-sky-500/25 transition"
             >
               <FileDown className="w-3.5 h-3.5" /> Export PDF
             </button>
             <button
               onClick={exportCsv}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 transition"
+              className="flex items-center justify-center gap-1.5 min-h-10 px-3 py-2 rounded-xl text-xs font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 transition"
             >
               <Download className="w-3.5 h-3.5" /> Export CSV
             </button>
@@ -248,33 +251,50 @@ export default function Reports() {
         </motion.div>
       )}
 
-      {/* Filters row */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-500">Month:</span>
-          <input
-            type="month" value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-emerald-500/50"
-          />
-        </div>
-        {properties.length > 1 && (
-          <div className="flex items-center gap-2">
-            <Building2 className="w-3.5 h-3.5 text-slate-500" />
-            <select
-              value={selectedProp}
-              onChange={(e) => setSelectedProp(e.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-sm outline-none focus:border-emerald-500/50"
-            >
-              <option value="">All Properties</option>
-              {properties.map((p: any) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
+      {/* Reporting period and delivery scope */}
+      <Card className="p-4" hover={false}>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-white">Statement period</div>
+            <p className="text-[11px] text-slate-500 mt-1">The statement and exports cover the full business portfolio for this month.</p>
           </div>
-        )}
-      </div>
+          <div className="flex flex-col sm:flex-row gap-3 sm:ml-auto">
 
+        <div className="flex items-center gap-2">
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] uppercase tracking-wider text-slate-500">Month</span>
+            <input
+              aria-label="Statement month"
+              type="month" value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              className="min-h-10 bg-slate-950/60 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-200 outline-none focus:border-emerald-300/40"
+            />
+          </label>
+          {properties.length > 1 && (
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wider text-slate-500">WhatsApp dispatch scope</span>
+              <select
+                aria-label="WhatsApp report property"
+                value={selectedProp}
+                onChange={(e) => setSelectedProp(e.target.value)}
+                className="min-h-10 bg-slate-950/60 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-200 outline-none focus:border-emerald-300/40"
+              >
+                <option value="">All properties</option>
+                {properties.map((p: any) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          </div>
+        </div>
+      </Card>
+
+      {loadError && (
+        <div role="alert" className="rounded-xl border border-rose-300/20 bg-rose-300/[0.06] px-4 py-3 text-xs text-rose-200">
+          {loadError}
+        </div>
+      )}
       {loading && (
         <div className="flex items-center justify-center h-40 text-slate-500">
           <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading statement…
