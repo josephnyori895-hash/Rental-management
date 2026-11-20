@@ -96,8 +96,10 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
     }));
   };
 
-  const addSection = () => {
-    const section = makeSection(`Block ${config.sections.length + 1}`);
+  const addSection = (kind: LayoutSection["kind"] = "block") => {
+    const index = config.sections.length + 1;
+    const name = kind === "standalone" ? `House ${index}` : kind === "wing" ? `Wing ${index}` : `Block ${index}`;
+    const section = makeSection(name, kind);
     setConfig((current) => ({ ...current, sections: [...current.sections, section] }));
     setSavedMessage("");
   };
@@ -157,6 +159,34 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
       spaces: [],
     }],
   }));
+
+  const removeLevel = (sectionId: string, levelId: string) => {
+    updateSection(sectionId, (section) => ({
+      ...section,
+      levels: section.levels.filter((level) => level.id !== levelId),
+    }));
+    setConfig((current) => ({
+      ...current,
+      placements: current.placements.filter((placement) =>
+        placement.section_id !== sectionId || placement.level_id !== levelId
+      ),
+    }));
+    setSavedMessage("");
+  };
+
+  const removeFace = (sectionId: string, faceId: string) => {
+    updateSection(sectionId, (section) => ({
+      ...section,
+      faces: section.faces.filter((face) => face.id !== faceId),
+    }));
+    setConfig((current) => ({
+      ...current,
+      placements: current.placements.filter((placement) =>
+        placement.section_id !== sectionId || placement.face_id !== faceId
+      ),
+    }));
+    setSavedMessage("");
+  };
 
   const addSpace = (sectionId: string, levelId: string) => updateSection(sectionId, (section) => ({
     ...section,
@@ -232,14 +262,18 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
                     <option value="compound">Compound / multiple buildings</option>
                   </select>
                 </label>
-                <button type="button" onClick={addSection} className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/15"><Plus className="h-4 w-4" /> Add block or wing</button>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => addSection("block")} className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/15"><Plus className="h-4 w-4" /> Add block</button>
+                  <button type="button" onClick={() => addSection("wing")} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800"><Plus className="h-4 w-4" /> Add wing</button>
+                  <button type="button" onClick={() => addSection("standalone")} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800"><Plus className="h-4 w-4" /> Add standalone house</button>
+                </div>
               </div>
 
               {config.sections.length === 0 && (
                 <div className="rounded-xl border border-dashed border-slate-700 p-8 text-center">
                   <p className="text-sm font-medium text-slate-200">Start with the real structure</p>
                   <p className="mt-1 text-xs text-slate-500">Add a block or wing, then assign units to its floors and faces.</p>
-                  <button type="button" onClick={addSection} className="mt-4 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold text-slate-950">Create first block</button>
+                  <button type="button" onClick={() => addSection("block")} className="mt-4 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold text-slate-950">Create first block</button>
                 </div>
               )}
 
@@ -259,7 +293,7 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
                         <div key={level.id} className="space-y-2 rounded-lg border border-slate-800 bg-slate-950/70 p-2.5">
                           <div className="flex gap-2">
                             <input value={level.label} aria-label="Floor label" onChange={(event) => updateSection(section.id, (current) => ({ ...current, levels: current.levels.map((item) => item.id === level.id ? { ...item, label: event.target.value } : item) }))} className="min-w-0 flex-1 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-2 text-xs text-slate-200" />
-                            <span className="self-center text-[10px] text-slate-600">Order {level.order}</span>
+                            <button type="button" onClick={() => removeLevel(section.id, level.id)} aria-label={`Remove ${level.label}`} className="rounded-lg border border-rose-500/20 px-2 py-1 text-rose-300 hover:bg-rose-500/10"><Trash2 className="h-3 w-3" /></button>
                           </div>
                           <div className="flex items-center justify-between gap-2">
                             <p className="text-[10px] font-semibold text-slate-400">Internal rooms / shared spaces</p>
@@ -284,7 +318,7 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
                     </div>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between"><p className="text-xs font-semibold text-slate-300">Faces / entrances</p><button type="button" onClick={() => addFace(section.id)} className="text-xs text-emerald-300">+ Add face</button></div>
-                      {section.faces.map((face) => <div key={face.id} className="grid grid-cols-[1fr_110px] gap-2"><input value={face.label} aria-label="Face label" onChange={(event) => updateSection(section.id, (current) => ({ ...current, faces: current.faces.map((item) => item.id === face.id ? { ...item, label: event.target.value } : item) }))} className="min-w-0 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-2 text-xs text-slate-200" /><select value={face.orientation} aria-label="Face orientation" onChange={(event) => updateSection(section.id, (current) => ({ ...current, faces: current.faces.map((item) => item.id === face.id ? { ...item, orientation: event.target.value as Orientation } : item) }))} className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-xs text-slate-300"><option value="front">Front</option><option value="back">Back</option><option value="left">Left</option><option value="right">Right</option><option value="interior">Interior</option></select></div>)}
+                      {section.faces.map((face) => <div key={face.id} className="grid grid-cols-[minmax(0,1fr)_110px_auto] gap-2"><input value={face.label} aria-label="Face label" onChange={(event) => updateSection(section.id, (current) => ({ ...current, faces: current.faces.map((item) => item.id === face.id ? { ...item, label: event.target.value } : item) }))} className="min-w-0 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-2 text-xs text-slate-200" /><select value={face.orientation} aria-label="Face orientation" onChange={(event) => updateSection(section.id, (current) => ({ ...current, faces: current.faces.map((item) => item.id === face.id ? { ...item, orientation: event.target.value as Orientation } : item) }))} className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-xs text-slate-300"><option value="front">Front</option><option value="back">Back</option><option value="left">Left</option><option value="right">Right</option><option value="interior">Interior</option></select><button type="button" onClick={() => removeFace(section.id, face.id)} aria-label={`Remove ${face.label}`} className="rounded-lg border border-rose-500/20 px-2 text-rose-300 hover:bg-rose-500/10"><Trash2 className="h-3 w-3" /></button></div>)}
                     </div>
                   </div>
                 </section>
