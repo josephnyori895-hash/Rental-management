@@ -82,14 +82,31 @@ export default function Properties() {
 
   const hostel = board?.hostels.find((h: any) => h.property_id === selected) || board?.hostels[0];
 
-  const perFloor = Math.ceil(Math.sqrt(rooms.length || 1)) + 2;
   const floors = useMemo(() => {
     const sorted = [...rooms].sort((a, b) =>
       a.unit_number.localeCompare(b.unit_number, undefined, { numeric: true }));
-    const rows: any[][] = [];
-    for (let i = 0; i < sorted.length; i += perFloor) rows.push(sorted.slice(i, i + perFloor));
-    return rows.reverse().map((r, i) => ({ rooms: r, label: `${rows.length - i}F` }));
-  }, [rooms, perFloor]);
+    const placements = savedLayout?.placements ?? [];
+    const configuredFloors = (savedLayout?.sections ?? []).flatMap((section: any) =>
+      (section.levels ?? []).map((level: any) => {
+        const unitIds = placements
+          .filter((placement: any) => placement.section_id === section.id && placement.level_id === level.id)
+          .map((placement: any) => placement.unit_id);
+        return {
+          rooms: unitIds.map((id: string) => sorted.find((room: any) => room.id === id)).filter(Boolean),
+          label: `${section.name} · ${level.label}`,
+        };
+      })
+    );
+    if (!configuredFloors.length) {
+      return [{ rooms: sorted, label: "Floor not configured" }];
+    }
+    const mappedIds = new Set(placements.map((placement: any) => placement.unit_id));
+    const unassigned = sorted.filter((room: any) => !mappedIds.has(room.id));
+    return [
+      ...configuredFloors,
+      ...(unassigned.length ? [{ rooms: unassigned, label: "Unassigned units" }] : []),
+    ];
+  }, [rooms, savedLayout]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { vacant: 0, unpaid: 0, partial: 0, paid: 0, overpaid: 0 };
@@ -209,6 +226,7 @@ export default function Properties() {
                 <span className="text-slate-500 font-mono">{hostel?.name} · {rooms.length} units · {hostel?.occupied || 0} occupied</span>
                 <span className="text-slate-600">Click any window to inspect the room</span>
               </div>
+              <p className="border-t border-slate-800/40 px-5 py-2 text-[10px] text-slate-500">Schematic rent-status overview. Floor assignments come from your saved property layout; unconfigured units are kept together rather than assigned to invented floors.</p>
             </>
           )}
           {view === "blueprint" && (
