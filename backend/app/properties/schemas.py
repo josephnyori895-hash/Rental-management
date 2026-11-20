@@ -75,10 +75,27 @@ class UnitOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class LayoutSpace(BaseModel):
+    """A non-rentable internal room or shared space inside a property level.
+
+    rentable_unit_id links internal rooms to their containing rentable unit.
+    A null value represents a shared/common area and never creates a lease.
+    """
+    id: str = Field(min_length=1, max_length=80)
+    label: str = Field(min_length=1, max_length=100)
+    kind: Literal[
+        "bedroom", "kitchen", "bathroom", "living_room", "dining_room",
+        "balcony", "storage", "corridor", "office", "shop", "shared", "other",
+    ] = "other"
+    rentable_unit_id: UUID | None = None
+    order: int = Field(default=0, ge=0, le=10000)
+
+
 class LayoutLevel(BaseModel):
     id: str = Field(min_length=1, max_length=80)
     label: str = Field(min_length=1, max_length=100)
     order: int = Field(ge=0, le=100)
+    spaces: list[LayoutSpace] = Field(default_factory=list, max_length=200)
 
 
 class LayoutFace(BaseModel):
@@ -118,11 +135,16 @@ class PropertyLayoutConfig(BaseModel):
         placement_ids = [placement.unit_id for placement in self.placements]
         if len(placement_ids) != len(set(placement_ids)):
             raise ValueError("Each unit may have only one layout placement")
+        space_ids: list[str] = []
         for section in self.sections:
             level_ids = [level.id for level in section.levels]
             face_ids = [face.id for face in section.faces]
             if len(level_ids) != len(set(level_ids)) or len(face_ids) != len(set(face_ids)):
                 raise ValueError("Level and face IDs must be unique within a section")
+            for level in section.levels:
+                space_ids.extend(space.id for space in level.spaces)
+        if len(space_ids) != len(set(space_ids)):
+            raise ValueError("Internal space IDs must be unique within a property")
         for placement in self.placements:
             section = section_map.get(placement.section_id)
             if section is None:
