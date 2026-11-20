@@ -149,7 +149,7 @@ export default function PropertyStructurePlan({
                           <span className="text-[9px] text-slate-500">{levelUnits.length} units · {spaces.length} spaces</span>
                         </div>
                         {levelUnits.length > 0 ? (
-                          <div className="relative min-h-[260px] overflow-hidden rounded-xl border border-slate-800 bg-[linear-gradient(rgba(148,163,184,.07)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,.07)_1px,transparent_1px)] bg-[size:24px_24px]">
+                          <div className="relative aspect-[4/3] min-h-[260px] max-h-[520px] overflow-hidden rounded-xl border border-slate-800 bg-[linear-gradient(rgba(148,163,184,.07)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,.07)_1px,transparent_1px)] bg-[size:24px_24px]">
                             <span className="absolute left-2 top-2 text-[9px] uppercase tracking-wider text-slate-600">Schematic · editable proportions</span>
                             {levelUnits.map((unit, index) => {
                               const placement = levelPlacements.find((item) => item.unit_id === unit.id);
@@ -167,7 +167,7 @@ export default function PropertyStructurePlan({
                         {spaces.length > 0 && (
                           <div className="mt-3 border-t border-slate-800 pt-3">
                             <p className="mb-2 flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wide text-slate-500"><DoorOpen className="h-3 w-3" /> Internal and shared spaces</p>
-                            <div className="relative min-h-[150px] overflow-hidden rounded-lg border border-slate-800 bg-slate-950/70">
+                            <div className="relative aspect-[4/3] min-h-[240px] max-h-[420px] overflow-hidden rounded-lg border border-slate-800 bg-slate-950/70">
                               {spaces.map((space, index) => {
                                 const containingUnit = space.rentable_unit_id ? unitById.get(space.rentable_unit_id) : undefined;
                                 const width = space.width ?? 180;
