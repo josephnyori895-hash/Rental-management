@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Building2, User, Phone, CalendarDays, Receipt,
   CheckCircle2, Droplets, Sparkles, X, Home, ShieldCheck, RotateCcw,
-  Layers, Grid3X3, Square, PanelBottom,
+  Layers, Square,
 } from "lucide-react";
 import { getBoard, getRooms, getProperties, getPropertyLayout, listStaff, assignCaretaker } from "../lib/api";
 import { Card, Badge, PageHeader, money, EmptyState } from "../components/ui";
@@ -25,10 +25,8 @@ const LIGHT: Record<Light, { color: string; glow: string; label: string }> = {
 };
 
 const VIEWS = [
-  { id: "building",  label: "Building",  icon: <Building2 className="w-3.5 h-3.5" /> },
-  { id: "blueprint", label: "Blueprint", icon: <Layers className="w-3.5 h-3.5" /> },
-  { id: "isometric", label: "Isometric", icon: <Grid3X3 className="w-3.5 h-3.5" /> },
-  { id: "panels",    label: "Panels",    icon: <Square className="w-3.5 h-3.5" /> },
+  { id: "building", label: "Property structure", icon: <Building2 className="w-3.5 h-3.5" /> },
+  { id: "panels", label: "Unit cards", icon: <Square className="w-3.5 h-3.5" /> },
 ];
 
 export default function Properties() {
@@ -227,16 +225,6 @@ export default function Properties() {
               onUnitClick={openRoom}
               activeUnitId={active}
             />
-          )}
-          {view === "blueprint" && (
-            <BlueprintCanvas floors={floors} counts={counts} propertyName={hostel?.name}
-              totalUnits={rooms.length} occupied={hostel?.occupied}
-              onRoomClick={openRoom} activeRoomId={active} />
-          )}
-          {view === "isometric" && (
-            <IsometricCanvas floors={floors} counts={counts} propertyName={hostel?.name}
-              totalUnits={rooms.length} occupied={hostel?.occupied}
-              onRoomClick={openRoom} activeRoomId={active} />
           )}
           {view === "panels" && (
             <PanelGrid floors={floors} counts={counts} propertyName={hostel?.name}
