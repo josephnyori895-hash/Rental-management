@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, Plus, Save, Trash2, X } from "lucide-react";
 import { getPropertyLayout, savePropertyLayout } from "../lib/api";
+import PropertyLayoutCanvas from "./PropertyLayoutCanvas";
 
 type Orientation = "front" | "back" | "left" | "right" | "interior";
 type LayoutSpace = {
@@ -152,6 +153,14 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
       placements: [...current.placements.filter((p) => p.unit_id !== unitId), placement],
     }));
     setError("");
+    setSavedMessage("");
+  };
+
+  const updatePlacementGeometry = (unitId: string, patch: Partial<Pick<UnitPlacement, "x" | "y" | "width" | "height" | "rotation">>) => {
+    setConfig((current) => ({
+      ...current,
+      placements: current.placements.map((placement) => placement.unit_id === unitId ? { ...placement, ...patch } : placement),
+    }));
     setSavedMessage("");
   };
 
@@ -312,6 +321,29 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
                             <input value={level.label} aria-label="Floor label" onChange={(event) => updateSection(section.id, (current) => ({ ...current, levels: current.levels.map((item) => item.id === level.id ? { ...item, label: event.target.value } : item) }))} className="min-w-0 flex-1 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-2 text-xs text-slate-200" />
                             <button type="button" onClick={() => removeLevel(section.id, level.id)} aria-label={`Remove ${level.label}`} className="rounded-lg border border-rose-500/20 px-2 py-1 text-rose-300 hover:bg-rose-500/10"><Trash2 className="h-3 w-3" /></button>
                           </div>
+                          <PropertyLayoutCanvas
+                            items={[
+                              ...(level.spaces ?? []).map((space, index) => ({
+                                id: `space:${section.id}:${level.id}:${space.id}`, label: space.label, kind: "space" as const,
+                                x: space.x ?? Math.min(820, 40 + (index % 4) * 220),
+                                y: space.y ?? Math.min(860, 40 + Math.floor(index / 4) * 180),
+                                width: space.width ?? 180, height: space.height ?? 140, rotation: space.rotation ?? 0,
+                              })),
+                              ...config.placements.filter((placement) => placement.section_id === section.id && placement.level_id === level.id).map((placement, index) => ({
+                                id: `unit:${placement.unit_id}`, label: rooms.find((room) => room.id === placement.unit_id)?.unit_number ?? "Rental unit", kind: "unit" as const,
+                                x: placement.x ?? Math.min(810, 40 + (index % 4) * 220),
+                                y: placement.y ?? Math.min(850, 40 + Math.floor(index / 4) * 180),
+                                width: placement.width ?? 190, height: placement.height ?? 150, rotation: placement.rotation ?? 0,
+                              })),
+                            ]}
+                            onGeometryChange={(id, geometry) => {
+                              if (id.startsWith("unit:")) updatePlacementGeometry(id.slice(5), geometry);
+                              else {
+                                const [, sectionId, levelId, spaceId] = id.split(":");
+                                updateSpace(sectionId, levelId, spaceId, geometry);
+                              }
+                            }}
+                          />
                           <div className="flex items-center justify-between gap-2">
                             <p className="text-[10px] font-semibold text-slate-400">Internal rooms / shared spaces</p>
                             <button type="button" onClick={() => addSpace(section.id, level.id)} className="text-[10px] font-medium text-emerald-300">+ Add room</button>
