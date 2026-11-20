@@ -75,6 +75,7 @@ const emptyConfig: LayoutConfig = {
 
 export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSaved }: Props) {
   const [config, setConfig] = useState<LayoutConfig>(emptyConfig);
+  const [savedConfig, setSavedConfig] = useState<LayoutConfig>(emptyConfig);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -86,7 +87,9 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
     getPropertyLayout(propertyId)
       .then((result) => {
         if (!active) return;
-        setConfig(result?.layout_config ?? emptyConfig);
+        const loadedConfig = result?.layout_config ?? emptyConfig;
+        setConfig(loadedConfig);
+        setSavedConfig(loadedConfig);
       })
       .catch((err: unknown) => {
         if (active) setError(err instanceof Error ? err.message : "Could not load saved layout.");
@@ -94,6 +97,16 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [propertyId]);
+
+  const hasUnsavedChanges = useMemo(
+    () => JSON.stringify(config) !== JSON.stringify(savedConfig),
+    [config, savedConfig],
+  );
+
+  const requestClose = () => {
+    if (hasUnsavedChanges && !window.confirm("Discard your unsaved property layout changes?")) return;
+    onClose();
+  };
 
   const placementsByUnit = useMemo(
     () => new Map(config.placements.map((placement) => [placement.unit_id, placement])),
@@ -252,6 +265,7 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
     setSavedMessage("");
     try {
       await savePropertyLayout(propertyId, config);
+      setSavedConfig(config);
       onSaved(config);
       setSavedMessage("Layout saved.");
     } catch (err) {
@@ -269,7 +283,7 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
             <h2 id="layout-editor-title" className="text-sm font-semibold text-white">Configure property layout</h2>
             <p className="mt-1 text-xs text-slate-400">Map rentable units to the property, then describe the rooms inside each unit. Bedrooms and kitchens never become rental units by themselves.</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close layout editor" className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white"><X className="h-4 w-4" /></button>
+          <button type="button" onClick={requestClose} aria-label="Close layout editor" className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white"><X className="h-4 w-4" /></button>
         </header>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
@@ -377,7 +391,7 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
               ))}
 
               <section className="space-y-3">
-                <div><h3 className="text-sm font-semibold text-white">Assign units</h3><p className="mt-1 text-xs text-slate-500">Each unit can be mapped once. Existing tenant and rent data is read-only here.</p></div>
+                <div><h3 className="text-sm font-semibold text-white">Assign and position units</h3><p className="mt-1 text-xs text-slate-500">Arrange units on the floor canvas by dragging them; resize from the corner or use the geometry fields below. Existing tenant and rent data is read-only here.</p></div>
                 {rooms.length === 0 ? <p className="rounded-lg border border-slate-800 p-4 text-xs text-slate-500">No units are available for this property yet.</p> : rooms.map((room) => {
                   const placement = placementsByUnit.get(room.id);
                   const section = config.sections.find((item) => item.id === placement?.section_id);
@@ -399,8 +413,8 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
         </div>
 
         <footer className="flex items-center justify-between gap-3 border-t border-slate-800 bg-slate-950 px-4 py-3 sm:px-6">
-          <p className="text-[10px] text-slate-500">{config.placements.length} of {rooms.length} units mapped</p>
-          <div className="flex gap-2"><button type="button" onClick={onClose} className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-slate-800">Cancel</button><button type="button" disabled={loading || saving} onClick={save} className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-xs font-semibold text-slate-950 disabled:opacity-50"><Save className="h-3.5 w-3.5" />{saving ? "Saving…" : "Save layout"}</button></div>
+          <p className="text-[10px] text-slate-500">{config.placements.length} of {rooms.length} units mapped{hasUnsavedChanges ? " · Unsaved changes" : ""}</p>
+          <div className="flex gap-2"><button type="button" onClick={requestClose} className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-slate-800">Cancel</button><button type="button" disabled={loading || saving} onClick={save} className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-xs font-semibold text-slate-950 disabled:opacity-50"><Save className="h-3.5 w-3.5" />{saving ? "Saving…" : "Save layout"}</button></div>
         </footer>
       </div>
     </div>
