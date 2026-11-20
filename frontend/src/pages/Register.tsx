@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { ArrowLeft, Building2, Check, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
+import { registerBusiness } from "../lib/api";
 
 export default function Register() {
   const [businessName,setBusinessName]=useState("");
@@ -19,7 +20,6 @@ export default function Register() {
     if(password!==confirmPassword){setError("The passwords do not match.");return;}
     setLoading(true);
     try {
-      const {registerBusiness}=await import("../lib/api");
       await registerBusiness({business_name:businessName.trim(),owner_full_name:fullName.trim(),email:email.trim(),password,...(phone.trim()?{phone:phone.trim()}:{})});
       window.location.assign("/login?registered=1");
     } catch(cause) {
