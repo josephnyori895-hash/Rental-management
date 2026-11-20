@@ -147,3 +147,41 @@ def test_property_layout_config_supports_many_sections_and_levels():
     config = PropertyLayoutConfig.model_validate({"building_type": "compound", "sections": sections})
     assert len(config.sections) == 40
     assert sum(len(section.levels) for section in config.sections) == 1600
+
+
+
+def test_property_layout_config_keeps_legacy_v1_geometry_optional():
+    config = PropertyLayoutConfig.model_validate({
+        "version": 1,
+        "sections": [{
+            "id": "legacy", "name": "Legacy block",
+            "levels": [{"id": "ground", "label": "Ground", "order": 0,
+                        "spaces": [{"id": "room", "label": "Room"}]}],
+            "faces": [{"id": "front", "label": "Front", "orientation": "front"}],
+        }],
+        "placements": [{
+            "unit_id": str(uuid4()), "section_id": "legacy", "level_id": "ground",
+            "face_id": "front", "position": 0,
+        }],
+    })
+    assert config.placements[0].x is None
+    assert config.sections[0].levels[0].spaces[0].width is None
+
+
+@pytest.mark.parametrize("geometry", [
+    {"x": -1}, {"y": 1001}, {"width": 9}, {"height": 1001}, {"rotation": 181},
+])
+def test_property_layout_config_rejects_out_of_range_unit_geometry(geometry):
+    with pytest.raises(ValidationError):
+        PropertyLayoutConfig.model_validate({
+            "version": 1,
+            "sections": [{
+                "id": "main", "name": "Main",
+                "levels": [{"id": "ground", "label": "Ground", "order": 0}],
+                "faces": [{"id": "front", "label": "Front", "orientation": "front"}],
+            }],
+            "placements": [{
+                "unit_id": str(uuid4()), "section_id": "main", "level_id": "ground",
+                "face_id": "front", "position": 0, **geometry,
+            }],
+        })
