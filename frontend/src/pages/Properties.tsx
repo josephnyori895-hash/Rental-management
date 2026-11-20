@@ -8,6 +8,7 @@ import {
 import { getBoard, getRooms, getProperties, getPropertyLayout, listStaff, assignCaretaker } from "../lib/api";
 import { Card, Badge, PageHeader, money, EmptyState } from "../components/ui";
 import BuildingCanvas from "../components/BuildingCanvas";
+import PropertyStructurePlan from "../components/PropertyStructurePlan";
 import BlueprintCanvas from "../components/BlueprintCanvas";
 import IsometricCanvas from "../components/IsometricCanvas";
 import PanelGrid from "../components/PanelGrid";
@@ -218,16 +219,14 @@ export default function Properties() {
       ) : (
         <div className="rounded-2xl overflow-hidden border border-slate-800/50 bg-slate-950">
           {view === "building" && (
-            <>
-              <BuildingCanvas floors={floors} counts={counts} propertyName={hostel?.name}
-                totalUnits={rooms.length} occupied={hostel?.occupied}
-                onRoomClick={openRoom} activeRoomId={active} />
-              <div className="border-t border-slate-800/40 bg-slate-900/60 backdrop-blur-sm px-5 py-2.5 flex items-center justify-between text-[10px]">
-                <span className="text-slate-500 font-mono">{hostel?.name} · {rooms.length} units · {hostel?.occupied || 0} occupied</span>
-                <span className="text-slate-600">Click any window to inspect the room</span>
-              </div>
-              <p className="border-t border-slate-800/40 px-5 py-2 text-[10px] text-slate-500">Schematic rent-status overview. Floor assignments come from your saved property layout; unconfigured units are kept together rather than assigned to invented floors.</p>
-            </>
+            <PropertyStructurePlan
+              propertyName={hostel?.name}
+              sections={savedLayout?.sections ?? []}
+              placements={savedLayout?.placements ?? []}
+              units={rooms}
+              onUnitClick={openRoom}
+              activeUnitId={active}
+            />
           )}
           {view === "blueprint" && (
             <BlueprintCanvas floors={floors} counts={counts} propertyName={hostel?.name}
