@@ -10,6 +10,15 @@ type CatalogItem = {
   per_unit_amount?: string | null; effective_from?: string | null;
 };
 
+class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 async function request(path: string, token: string, method = "GET", body?: unknown) {
   const response = await fetch(API + path, {
     method,
@@ -17,7 +26,7 @@ async function request(path: string, token: string, method = "GET", body?: unkno
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || `Request failed (${response.status})`);
+  if (!response.ok) throw new ApiError(data.detail || `Request failed (${response.status})`, response.status);
   return data;
 }
 
@@ -32,7 +41,7 @@ export default function PlatformAdminConsole() {
   const [platformInvoices, setPlatformInvoices] = useState<any[]>([]);
   const [platformPayments, setPlatformPayments] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(false);\n  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [newItem, setNewItem] = useState({ code: "", name: "", item_type: "package", pricing_model: "flat_recurring", description: "", features: "{\n  \n}" });
@@ -63,11 +72,23 @@ export default function PlatformAdminConsole() {
 
   useEffect(() => {
     if (!token) return;
-    loadCatalogue(token).catch((e) => {
-      sessionStorage.removeItem(TOKEN_KEY);
-      setToken("");
-      setError(e.message || "Your platform admin session is no longer valid.");
+    let mounted = true;
+    setLoading(true);
+    setError("");
+    loadCatalogue(token).catch((e: unknown) => {
+      if (!mounted) return;
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        sessionStorage.removeItem(TOKEN_KEY);
+        setToken("");
+        setAdmin(null);
+        setError("Your platform administrator session has expired. Please sign in again.");
+      } else {
+        setError(e instanceof Error ? e.message : "Could not load platform data. Your session has been kept.");
+      }
+    }).finally(() => {
+      if (mounted) setLoading(false);
     });
+    return () => { mounted = false; };
   }, [token]);
 
   async function login(e: React.FormEvent) {
