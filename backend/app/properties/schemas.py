@@ -113,6 +113,11 @@ class LayoutSection(BaseModel):
     id: str = Field(min_length=1, max_length=80)
     name: str = Field(min_length=1, max_length=120)
     kind: Literal["block", "wing", "entrance", "standalone"] = "block"
+    x: int | None = Field(default=None, ge=0, le=1000)
+    y: int | None = Field(default=None, ge=0, le=1000)
+    width: int | None = Field(default=None, ge=10, le=1000)
+    height: int | None = Field(default=None, ge=10, le=1000)
+    rotation: int | None = Field(default=None, ge=-180, le=180)
     levels: list[LayoutLevel] = Field(default_factory=list, max_length=500)
     faces: list[LayoutFace] = Field(default_factory=list, max_length=100)
 
@@ -162,6 +167,10 @@ class PropertyLayoutConfig(BaseModel):
         if len(space_ids) != len(set(space_ids)):
             raise ValueError("Internal space IDs must be unique within a property")
         for section in self.sections:
+            if section.x is not None and section.width is not None and section.x + section.width > 1000:
+                raise ValueError(f"Section {section.id} extends beyond the layout width")
+            if section.y is not None and section.height is not None and section.y + section.height > 1000:
+                raise ValueError(f"Section {section.id} extends beyond the layout height")
             for level in section.levels:
                 for space in level.spaces:
                     if space.x is not None and space.width is not None and space.x + space.width > 1000:
