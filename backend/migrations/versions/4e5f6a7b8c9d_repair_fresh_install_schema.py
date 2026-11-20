@@ -1,7 +1,7 @@
 """create application tables and business columns missing from fresh installs
 
 Revision ID: 4e5f6a7b8c9d
-Revises: 0a1b2c3d4e5f
+Revises: 3d4e5f6a7b8c
 """
 from typing import Sequence, Union
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision: str = '4e5f6a7b8c9d'
-down_revision: Union[str, None] = '0a1b2c3d4e5f'
+down_revision: Union[str, None] = '3d4e5f6a7b8c'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
