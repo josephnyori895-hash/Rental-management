@@ -87,28 +87,43 @@ async def make_item(
     return item, price
 
 
-async def make_platform_admin(session, business):
-    """Platform staff. Provisioned out-of-band, never through `/auth/staff`."""
-    from app.core.security import hash_password
-    from app.models.business import User
+async def make_platform_admin(session, business=None):
+    """Platform staff live in their own table, provisioned out-of-band.
 
-    user = User(
-        business_id=business.id,
+    They are deliberately not rows in `users`: a business owner must never be
+    able to create one through `POST /auth/staff`.
+    """
+    from app.core.security import hash_password
+    from app.models.platform_admin import PlatformAdmin
+
+    admin = PlatformAdmin(
         email=f"platform-{uuid4().hex[:10]}@rental.os",
-        password_hash=hash_password("platform-password"),
         full_name="Platform Admin",
-        role="platform_admin",
+        password_hash=hash_password("platform-password"),
         is_active=True,
+        is_superadmin=True,
     )
-    session.add(user)
+    session.add(admin)
     await session.flush()
-    return user
+    return admin
 
 
 def bearer_for(user) -> dict[str, str]:
+    """Business/landlord bearer token."""
     from app.core.security import create_access_token
 
     return {"Authorization": f"Bearer {create_access_token(str(user.id))}"}
+
+
+def platform_bearer(admin) -> dict[str, str]:
+    """Platform-admin token carrying the claims the real login issues."""
+    from app.core.security import create_access_token
+
+    token = create_access_token(
+        str(admin.id),
+        extra_claims={"type": "platform_admin_access", "principal_type": "platform_admin"},
+    )
+    return {"Authorization": f"Bearer {token}"}
 
 
 async def add_subscription(session, business, item, price, *, status="active", features=None):
@@ -213,17 +228,20 @@ async def test_business_owner_cannot_manage_the_platform_catalogue(
             "pricing_model": "flat_recurring",
         },
     )
-    assert created.status_code == 403, created.text
+    # A landlord credential is not a platform credential, so the platform
+    # dependency refuses it outright (401) rather than treating it as a
+    # lower-privileged platform actor.
+    assert created.status_code == 401, created.text
 
     priced = await client.post(
         f"{BASE}/admin/catalogue/{item.id}/prices",
         headers=first.bearer,
         json={"amount": "1.00", "effective_from": NOW.isoformat()},
     )
-    assert priced.status_code == 403, priced.text
+    assert priced.status_code == 401, priced.text
 
     admin_list = await client.get(f"{BASE}/admin/catalogue", headers=first.bearer)
-    assert admin_list.status_code == 403, admin_list.text
+    assert admin_list.status_code == 401, admin_list.text
 
 
 @requires_db
@@ -263,7 +281,7 @@ async def test_platform_admin_can_create_a_catalogue_item(client, businesses, db
 
     created = await client.post(
         f"{BASE}/admin/catalogue",
-        headers=bearer_for(admin),
+        headers=platform_bearer(admin),
         json={
             "code": "platform-made",
             "name": "Platform Made",
@@ -651,7 +669,7 @@ async def test_new_price_must_start_after_the_latest_version(client, businesses,
     first, _ = businesses
     item, _price = await make_item(db_session, "versioned-plan", effective_from=NOW)
     admin = await make_platform_admin(db_session, first.business)
-    headers = bearer_for(admin)
+    headers = platform_bearer(admin)
 
     same_start = await client.post(
         f"{BASE}/admin/catalogue/{item.id}/prices",
@@ -681,7 +699,7 @@ async def test_price_version_rejects_naive_and_inverted_windows(client, business
     first, _ = businesses
     item, _price = await make_item(db_session, "windowed-plan")
     admin = await make_platform_admin(db_session, first.business)
-    headers = bearer_for(admin)
+    headers = platform_bearer(admin)
 
     naive = await client.post(
         f"{BASE}/admin/catalogue/{item.id}/prices",
@@ -709,7 +727,7 @@ async def test_price_version_rejects_bad_currency_and_negative_amount(
     first, _ = businesses
     item, _price = await make_item(db_session, "priced-plan")
     admin = await make_platform_admin(db_session, first.business)
-    headers = bearer_for(admin)
+    headers = platform_bearer(admin)
 
     bad_currency = await client.post(
         f"{BASE}/admin/catalogue/{item.id}/prices",

@@ -25,23 +25,26 @@ import NotificationDropdown from "./components/NotificationDropdown";
 import TenantDetailModal from "./components/TenantDetailModal";
 import Background from "./components/Background";
 import LoginBackground from "./components/LoginBackground";
+import PlatformAdminConsole from "./pages/PlatformAdminConsole";
+import SubscriptionPage from "./pages/SubscriptionPage";
 
 import {
   LayoutDashboard, Building2, Users, CreditCard, Wrench, Receipt,
   BarChart3, BookOpen, Calendar, History, UserCircle, Settings as Cog,
-  LogOut, Menu, X, Zap, Bell, ChevronLeft,
+  LogOut, Menu, X, Zap, Bell, ChevronLeft, Package,
 } from "lucide-react";
 
 type View =
   | "overview" | "properties" | "tenants" | "payments" | "maintenance"
   | "expenses" | "utilities" | "reports" | "books" | "calendar" | "history"
-  | "portal" | "settings" | "enroll" | "tenant";
+  | "portal" | "settings" | "enroll" | "tenant" | "subscription";
 
 const NAV: { key: View; label: string; icon: React.ReactNode }[] = [
   { key: "overview", label: "Overview", icon: <LayoutDashboard className="w-4 h-4" /> },
   { key: "properties", label: "Properties", icon: <Building2 className="w-4 h-4" /> },
   { key: "tenants", label: "Tenants", icon: <Users className="w-4 h-4" /> },
   { key: "payments", label: "Payments", icon: <CreditCard className="w-4 h-4" /> },
+  { key: "subscription", label: "Plan & Add-ons", icon: <Package className="w-4 h-4" /> },
   { key: "maintenance", label: "Maintenance", icon: <Wrench className="w-4 h-4" /> },
   { key: "expenses", label: "Expenses", icon: <Receipt className="w-4 h-4" /> },
   { key: "utilities", label: "Utilities", icon: <Zap className="w-4 h-4" /> },
@@ -84,13 +87,15 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const role = token ? decodeRole() : null;
+  const isPlatformAdminPath = (window.location.pathname.replace(/\/+$/, "") || "/") === "/platform-admin";
 
   useEffect(() => {
+    if (isPlatformAdminPath) return;
     if (token && role && role !== "owner") {
       clearToken();
       setToken(null);
     }
-  }, [token, role]);
+  }, [token, role, isPlatformAdminPath]);
 
   const [view, setView] = useState<View>("overview");
 
@@ -126,10 +131,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || isPlatformAdminPath) return;
     const stop = startNotificationPolling(onNotification, 10000);
     return stop;
-  }, [token, onNotification]);
+  }, [token, onNotification, isPlatformAdminPath]);
 
   useEffect(() => {
     const onNavigate = (e: Event) => {
@@ -169,6 +174,10 @@ export default function App() {
       } catch { }
     })();
   }, []);
+
+  if (isPlatformAdminPath) {
+    return <PlatformAdminConsole />;
+  }
 
   if (!token) {
     const path = window.location.pathname.replace(/\/+$/, "") || "/";
@@ -366,6 +375,7 @@ export default function App() {
             {view === "properties" && <Properties />}
             {view === "tenants" && <Tenants />}
             {view === "payments" && <Payments />}
+            {view === "subscription" && <SubscriptionPage />}
             {view === "maintenance" && <Maintenance />}
             {view === "expenses" && <Expenses />}
             {view === "utilities" && <Utilities />}

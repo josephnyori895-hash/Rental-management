@@ -1,25 +1,30 @@
-"""Authenticated business-facing Rental OS subscription endpoints.
+"""Business-scoped Rental OS subscription selection, invoices and history.
 
-Catalogue changes are platform-admin operations; this initial slice exposes
-read/quote/select only. Selection creates a draft and never charges a card,
-starts an STK push, or alters landlord rent invoices/payments.
+Catalogue administration is reserved for the separate platform-admin principal.
+Selection and invoice issuance never collect payment or alter landlord rent
+invoices, payment credentials, or settlement destinations.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import case, select
+from sqlalchemy import case, desc, select, text, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import SessionDep, get_current_business, get_current_user, require_roles
+from app.api.deps import OwnerDep, SessionDep, get_current_business, get_current_user
+from app.platform_admin.dependencies import PlatformAdminDep, SuperAdminDep
+from app.platform_admin.audit import record_platform_admin_event
 from app.models.business import Business
 from app.models.subscriptions import (
     BusinessSubscription, BusinessSubscriptionItem, SubscriptionCatalogItem,
-    SubscriptionPriceVersion,
+    SubscriptionPriceVersion, SubscriptionInvoice, SubscriptionInvoiceLine,
+    BusinessSubscriptionEvent,
 )
 from app.subscriptions.service import (
     billable_unit_count, calculate_item_total, current_price, get_entitlements,
@@ -36,7 +41,7 @@ class CatalogItemCreate(BaseModel):
     item_type: str
     pricing_model: str
     features: dict = Field(default_factory=dict)
-    display_order: int = 0
+    display_order: int = Field(default=0, ge=0)
 
     @field_validator("item_type")
     @classmethod
@@ -53,9 +58,18 @@ class CatalogItemCreate(BaseModel):
         return value
 
 
+class CatalogItemUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=160)
+    description: str | None = Field(default=None, max_length=2000)
+    features: dict | None = None
+    display_order: int | None = Field(default=None, ge=0)
+    active: bool | None = None
+
+
 class PriceVersionCreate(BaseModel):
     currency: str = Field(default="KES", min_length=3, max_length=3, pattern=r"^[A-Z]{3}$")
     amount: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+    billing_interval: Literal["monthly", "quarterly", "annual", "one_time"] = "monthly"
     included_units: int = Field(default=0, ge=0)
     per_unit_amount: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=12, decimal_places=2)
     effective_from: datetime
@@ -67,24 +81,28 @@ class SelectionRequest(BaseModel):
     addon_codes: list[str] = Field(default_factory=list, max_length=30)
 
 
-async def _catalogue(session: AsyncSession, now: datetime):
+async def _catalogue(session: AsyncSession, now: datetime, include_unpriced: bool = False, include_inactive: bool = False):
+    query = select(SubscriptionCatalogItem)
+    if not include_inactive:
+        query = query.where(SubscriptionCatalogItem.active.is_(True))
     items = (await session.execute(
-        select(SubscriptionCatalogItem)
-        .where(SubscriptionCatalogItem.active.is_(True))
-        .order_by(SubscriptionCatalogItem.display_order, SubscriptionCatalogItem.name)
+        query.order_by(SubscriptionCatalogItem.display_order, SubscriptionCatalogItem.name)
     )).scalars().all()
     output = []
     for item in items:
         price = await current_price(session, item.id, now)
-        if not price:
+        if not price and not include_unpriced:
             continue
         output.append({
-            "code": item.code, "name": item.name, "description": item.description,
-            "item_type": item.item_type, "pricing_model": item.pricing_model,
-            "features": item.features or {}, "currency": price.currency,
-            "amount": str(price.amount), "included_units": price.included_units,
-            "per_unit_amount": str(price.per_unit_amount),
-            "effective_from": price.effective_from.isoformat(),
+            "id": str(item.id), "code": item.code, "name": item.name, "description": item.description,
+            "item_type": item.item_type, "pricing_model": item.pricing_model, "active": item.active,
+            "display_order": item.display_order,
+            "features": item.features or {}, "currency": price.currency if price else None,
+            "billing_interval": price.billing_interval if price else None,
+            "amount": str(price.amount) if price else None,
+            "included_units": price.included_units if price else None,
+            "per_unit_amount": str(price.per_unit_amount) if price else None,
+            "effective_from": price.effective_from.isoformat() if price else None,
         })
     return output
 
@@ -111,11 +129,16 @@ async def _price_selection(session: AsyncSession, data: SelectionRequest, busine
 
     units = await billable_unit_count(session, business.id)
     lines, total, currency = [], Decimal("0.00"), None
+    package_interval = None
     for code in codes:
         item = by_code[code]
         price = await current_price(session, item.id, now)
         if not price:
             raise HTTPException(status_code=409, detail=f"No effective price for {code}")
+        if code == data.package_code:
+            package_interval = price.billing_interval
+        elif item.pricing_model != "one_time" and price.billing_interval != package_interval:
+            raise HTTPException(status_code=409, detail="Recurring add-ons must use the base package billing interval")
         if currency is None:
             currency = price.currency
         elif currency != price.currency:
@@ -123,7 +146,7 @@ async def _price_selection(session: AsyncSession, data: SelectionRequest, busine
         amount = calculate_item_total(item, price, 1, units)
         total += amount
         lines.append((item, price, amount))
-    return now, units, currency or "KES", total, lines
+    return now, units, currency or "KES", total, lines, package_interval or "monthly"
 
 
 @router.get("/catalogue")
@@ -157,6 +180,9 @@ async def current_subscription(
             "id": str(sub.id), "status": sub.status, "currency": sub.currency,
             "starts_at": sub.starts_at.isoformat() if sub.starts_at else None,
             "current_period_end": sub.current_period_end.isoformat() if sub.current_period_end else None,
+            "billing_interval": sub.billing_interval,
+            "cancel_at_period_end": sub.cancel_at_period_end,
+            "cancellation_requested_at": sub.cancellation_requested_at.isoformat() if sub.cancellation_requested_at else None,
         },
         "entitlements": await get_entitlements(session, business.id),
     }
@@ -168,15 +194,19 @@ async def quote_subscription(
     session: SessionDep,
     business: Business = Depends(get_current_business),
 ):
-    _, units, currency, total, lines = await _price_selection(session, data, business)
+    _, units, currency, total, lines, interval = await _price_selection(session, data, business)
     return {
-        "currency": currency, "billable_units": units, "subtotal": str(total),
+        "currency": currency, "billing_interval": interval, "billable_units": units, "subtotal": str(total),
         "total": str(total),
         "items": [{
             "code": item.code, "name": item.name,
             "quantity": 1, "amount": str(amount),
+            "billable_units": units,
+            "included_units": price.included_units,
+            "per_unit_amount": str(price.per_unit_amount),
+            "billing_interval": price.billing_interval,
             "features": item.features or {},
-        } for item, _, amount in lines],
+        } for item, price, amount in lines],
         "notice": "Quote only. No payment has been initiated and no subscription has been activated.",
     }
 
@@ -185,26 +215,150 @@ async def quote_subscription(
 async def select_subscription(
     data: SelectionRequest,
     session: SessionDep,
+    owner: OwnerDep,
     business: Business = Depends(get_current_business),
 ):
-    now, units, currency, total, lines = await _price_selection(session, data, business)
+    now, units, currency, total, lines, interval = await _price_selection(session, data, business)
+    # Serialize selections per business and prevent multiple live subscriptions.
+    await session.scalar(select(Business).where(Business.id == business.id).with_for_update())
+    live = await session.scalar(
+        select(BusinessSubscription.id).where(
+            BusinessSubscription.business_id == business.id,
+            BusinessSubscription.status.in_(("active", "trialing", "past_due")),
+        ).with_for_update()
+    )
+    if live:
+        raise HTTPException(status_code=409, detail="An active subscription already exists; use the change-plan workflow")
+    drafts = (await session.scalars(
+        select(BusinessSubscription).where(
+            BusinessSubscription.business_id == business.id,
+            BusinessSubscription.status == "draft",
+        ).with_for_update()
+    )).all()
+    for previous in drafts:
+        open_invoice = await session.scalar(
+            select(SubscriptionInvoice.id).where(
+                SubscriptionInvoice.subscription_id == previous.id,
+                SubscriptionInvoice.status.in_(("draft", "open")),
+            ).limit(1)
+        )
+        if open_invoice:
+            raise HTTPException(status_code=409, detail="An unpaid subscription invoice already exists")
+        previous.status = "cancelled"
+        previous.cancelled_at = now
+        previous.cancellation_requested_at = now
+        session.add(BusinessSubscriptionEvent(
+            business_id=business.id, subscription_id=previous.id,
+            event_type="selection.replaced", actor_user_id=owner.id,
+            event_metadata={"reason": "new_selection"},
+        ))
     sub = BusinessSubscription(
-        business_id=business.id, status="draft", currency=currency,
+        business_id=business.id, status="draft", currency=currency, billing_interval=interval,
     )
     session.add(sub)
     await session.flush()
+    session.add(BusinessSubscriptionEvent(
+        business_id=business.id, subscription_id=sub.id,
+        event_type="selection.created", actor_user_id=owner.id,
+        event_metadata={"currency": currency, "billing_interval": interval, "total": str(total)},
+    ))
     for item, price, amount in lines:
         session.add(BusinessSubscriptionItem(
             subscription_id=sub.id, catalog_item_id=item.id, price_version_id=price.id,
             item_code_snapshot=item.code, item_name_snapshot=item.name, quantity=1,
+            billing_interval_snapshot=price.billing_interval,
+            billable_units_snapshot=units,
+            included_units_snapshot=price.included_units,
+            per_unit_amount_snapshot=price.per_unit_amount,
             unit_amount_snapshot=price.amount, total_amount_snapshot=amount,
             features_snapshot=item.features or {},
         ))
     await session.flush()
     return {
         "subscription_id": str(sub.id), "status": "draft",
-        "currency": currency, "billable_units": units, "total": str(total),
+        "currency": currency, "billing_interval": interval, "billable_units": units, "total": str(total),
         "notice": "Selection saved as a draft. It is not active and no payment was taken.",
+    }
+
+
+
+
+@router.post("/{subscription_id}/cancel")
+async def cancel_subscription(
+    subscription_id: UUID,
+    session: SessionDep,
+    owner: OwnerDep,
+    business: Business = Depends(get_current_business),
+):
+    """Cancel a draft immediately or schedule an active plan to end at period close."""
+    sub = await session.scalar(
+        select(BusinessSubscription)
+        .where(
+            BusinessSubscription.id == subscription_id,
+            BusinessSubscription.business_id == business.id,
+        )
+        .with_for_update()
+    )
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    if sub.status in {"cancelled", "expired"}:
+        return {"subscription_id": str(sub.id), "status": sub.status,
+                "cancel_at_period_end": False, "idempotent": True}
+
+    if sub.cancel_at_period_end:
+        return {"subscription_id": str(sub.id), "status": sub.status,
+                "cancel_at_period_end": True,
+                "current_period_end": sub.current_period_end.isoformat() if sub.current_period_end else None,
+                "idempotent": True}
+
+    now = datetime.now(timezone.utc)
+    if sub.status == "draft":
+        open_invoice = await session.scalar(
+            select(SubscriptionInvoice)
+            .where(
+                SubscriptionInvoice.subscription_id == sub.id,
+                SubscriptionInvoice.status.in_(("draft", "open")),
+            )
+            .with_for_update()
+        )
+        if open_invoice:
+            open_invoice.status = "void"
+        sub.status = "cancelled"
+        sub.cancelled_at = now
+        sub.cancellation_requested_at = now
+        sub.cancel_at_period_end = False
+        event_type = "subscription.cancelled"
+        event_metadata = {"reason": "owner_cancelled_before_payment"}
+    elif sub.status in {"active", "trialing", "past_due"}:
+        if sub.current_period_end is None or sub.current_period_end <= now:
+            sub.status = "cancelled"
+            sub.cancelled_at = now
+            sub.cancellation_requested_at = now
+            sub.cancel_at_period_end = False
+            event_type = "subscription.cancelled"
+            event_metadata = {"reason": "owner_cancelled_after_period_end"}
+        else:
+            sub.cancel_at_period_end = True
+            sub.cancellation_requested_at = now
+            event_type = "subscription.cancellation_scheduled"
+            event_metadata = {"effective_at": sub.current_period_end.isoformat()}
+    else:
+        raise HTTPException(status_code=409, detail="Subscription cannot be cancelled in its current state")
+
+    session.add(BusinessSubscriptionEvent(
+        business_id=business.id,
+        subscription_id=sub.id,
+        event_type=event_type,
+        actor_user_id=owner.id,
+        event_metadata=event_metadata,
+    ))
+    await session.flush()
+    return {
+        "subscription_id": str(sub.id), "status": sub.status,
+        "cancel_at_period_end": sub.cancel_at_period_end,
+        "current_period_end": sub.current_period_end.isoformat() if sub.current_period_end else None,
+        "notice": "Cancellation saved. Access remains until the current paid period ends." if sub.cancel_at_period_end else "Subscription cancelled.",
+        "idempotent": False,
     }
 
 
@@ -219,13 +373,15 @@ async def check_entitlement(
             "entitlements": entitlements}
 
 
-@router.get("/admin/catalogue", dependencies=[Depends(require_roles("platform_admin"))])
-async def admin_catalogue(session: SessionDep):
-    return {"items": await _catalogue(session, datetime.now(timezone.utc))}
+@router.get("/admin/catalogue")
+async def admin_catalogue(session: SessionDep, admin: PlatformAdminDep):
+    return {"items": await _catalogue(session, datetime.now(timezone.utc), include_unpriced=True, include_inactive=True)}
 
 
-@router.post("/admin/catalogue", status_code=201, dependencies=[Depends(require_roles("platform_admin"))])
-async def create_catalogue_item(data: CatalogItemCreate, session: SessionDep):
+@router.post("/admin/catalogue", status_code=201)
+async def create_catalogue_item(data: CatalogItemCreate, session: SessionDep, admin: SuperAdminDep, request: Request):
+    if data.item_type == "package" and data.pricing_model == "one_time":
+        raise HTTPException(status_code=422, detail="Base packages must use recurring pricing")
     existing = await session.scalar(
         select(SubscriptionCatalogItem).where(SubscriptionCatalogItem.code == data.code)
     )
@@ -233,23 +389,73 @@ async def create_catalogue_item(data: CatalogItemCreate, session: SessionDep):
         raise HTTPException(status_code=409, detail="Catalogue code already exists")
     item = SubscriptionCatalogItem(**data.model_dump(), active=True)
     session.add(item)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="Catalogue code already exists")
+    record_platform_admin_event(session, admin, "catalogue.item.created", target_type="subscription_catalog_item", target_id=str(item.id), metadata={"code": item.code, "item_type": item.item_type}, request=request)
     return {"id": str(item.id), "code": item.code, "active": item.active}
 
 
-@router.post("/admin/catalogue/{item_id}/prices", status_code=201,
-             dependencies=[Depends(require_roles("platform_admin"))])
-async def create_price_version(item_id: UUID, data: PriceVersionCreate, session: SessionDep):
+@router.put("/admin/catalogue/{item_id}")
+async def update_catalogue_item(
+    item_id: UUID,
+    data: CatalogItemUpdate,
+    session: SessionDep,
+    admin: SuperAdminDep,
+    request: Request,
+):
     item = await session.scalar(
-        select(SubscriptionCatalogItem).where(SubscriptionCatalogItem.id == item_id)
+        select(SubscriptionCatalogItem)
+        .where(SubscriptionCatalogItem.id == item_id)
+        .with_for_update()
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Catalogue item not found")
+    changes = data.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=422, detail="No catalogue changes supplied")
+    for key, value in changes.items():
+        if value is None and key != "description":
+            raise HTTPException(status_code=422, detail=f"{key} cannot be null")
+        setattr(item, key, value)
+    record_platform_admin_event(
+        session, admin, "catalogue.item.updated",
+        target_type="subscription_catalog_item", target_id=str(item.id),
+        metadata={"changed_fields": sorted(changes.keys()), "active": item.active},
+        request=request,
+    )
+    await session.flush()
+    return {"id": str(item.id), "code": item.code, "active": item.active,
+            "name": item.name, "features": item.features or {}}
+
+
+@router.post("/admin/catalogue/{item_id}/prices", status_code=201)
+async def create_price_version(item_id: UUID, data: PriceVersionCreate, session: SessionDep, admin: SuperAdminDep, request: Request):
+    item = await session.scalar(
+        select(SubscriptionCatalogItem)
+        .where(SubscriptionCatalogItem.id == item_id)
+        .with_for_update()
     )
     if not item or not item.active:
         raise HTTPException(status_code=404, detail="Active catalogue item not found")
+    if item.item_type == "package" and data.billing_interval == "one_time":
+        raise HTTPException(status_code=422, detail="Base packages must have a recurring billing interval")
+    if (item.pricing_model == "one_time") != (data.billing_interval == "one_time"):
+        raise HTTPException(status_code=422, detail="One-time pricing must use the one_time billing interval")
+    if item.pricing_model != "per_billable_unit" and (data.included_units != 0 or data.per_unit_amount != 0):
+        raise HTTPException(status_code=422, detail="Included and per-unit amounts apply only to per_billable_unit pricing")
     if data.effective_from.tzinfo is None:
         raise HTTPException(status_code=422, detail="effective_from must include a timezone")
     if data.effective_to is not None:
         if data.effective_to.tzinfo is None or data.effective_to <= data.effective_from:
             raise HTTPException(status_code=422, detail="effective_to must be later and timezone-aware")
+    # Serialize price-version writes even when the item has no rows yet.
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+        {"lock_key": f"subscription-price:{item.id}"},
+    )
     previous = (await session.execute(
         select(SubscriptionPriceVersion)
         .where(SubscriptionPriceVersion.catalog_item_id == item.id,
@@ -266,9 +472,200 @@ async def create_price_version(item_id: UUID, data: PriceVersionCreate, session:
     price = SubscriptionPriceVersion(catalog_item_id=item.id, **data.model_dump(), active=True)
     session.add(price)
     await session.flush()
+    record_platform_admin_event(session, admin, "catalogue.price.created", target_type="subscription_catalog_item", target_id=str(item.id), metadata={"price_version_id": str(price.id), "currency": price.currency, "billing_interval": price.billing_interval, "amount": str(price.amount), "effective_from": price.effective_from.isoformat()}, request=request)
     return {"id": str(price.id), "catalog_item_id": str(item.id),
             "currency": price.currency, "amount": str(price.amount),
             "effective_from": price.effective_from.isoformat(),
             "effective_to": price.effective_to.isoformat() if price.effective_to else None}
 
 
+
+
+@router.post("/{subscription_id}/invoice", status_code=201)
+async def issue_subscription_invoice(
+    subscription_id: UUID,
+    session: SessionDep,
+    owner: OwnerDep,
+    business: Business = Depends(get_current_business),
+):
+    """Issue a Rental OS subscription invoice for a saved draft selection.
+
+    This creates only a platform invoice. It does not call a payment provider,
+    alter landlord rent records, or activate the subscription.
+    """
+    sub = await session.scalar(
+        select(BusinessSubscription)
+        .where(
+            BusinessSubscription.id == subscription_id,
+            BusinessSubscription.business_id == business.id,
+        )
+        .with_for_update()
+    )
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subscription selection not found")
+    if sub.status != "draft":
+        raise HTTPException(status_code=409, detail="Only a draft selection can be invoiced")
+
+    existing = await session.scalar(
+        select(SubscriptionInvoice)
+        .where(
+            SubscriptionInvoice.subscription_id == sub.id,
+            SubscriptionInvoice.status.in_(("draft", "open")),
+        )
+        .order_by(SubscriptionInvoice.created_at.desc())
+        .limit(1)
+    )
+    if existing:
+        return {
+            "invoice_id": str(existing.id), "invoice_number": existing.invoice_number,
+            "status": existing.status, "currency": existing.currency,
+            "total": str(existing.total), "due_at": existing.due_at.isoformat() if existing.due_at else None,
+            "idempotent": True,
+        }
+
+    items = (await session.scalars(
+        select(BusinessSubscriptionItem)
+        .where(BusinessSubscriptionItem.subscription_id == sub.id)
+        .order_by(BusinessSubscriptionItem.created_at, BusinessSubscriptionItem.id)
+    )).all()
+    if not items:
+        raise HTTPException(status_code=409, detail="Subscription selection has no billable items")
+    total = sum((Decimal(item.total_amount_snapshot) for item in items), Decimal("0.00"))
+    if total <= 0:
+        raise HTTPException(status_code=409, detail="Zero-value subscriptions need an explicit activation flow")
+
+    now = datetime.now(timezone.utc)
+    invoice = SubscriptionInvoice(
+        business_id=business.id,
+        subscription_id=sub.id,
+        invoice_number=f"ROS-SUB-{now:%Y%m%d}-{uuid4().hex[:8].upper()}",
+        currency=sub.currency,
+        billing_interval=sub.billing_interval,
+        subtotal=total,
+        total=total,
+        status="open",
+        due_at=now + timedelta(days=7),
+    )
+    session.add(invoice)
+    await session.flush()
+    for index, item in enumerate(items, start=1):
+        session.add(SubscriptionInvoiceLine(
+            invoice_id=invoice.id,
+            line_number=index,
+            item_code_snapshot=item.item_code_snapshot,
+            item_name_snapshot=item.item_name_snapshot,
+            quantity=item.quantity,
+            billing_interval_snapshot=item.billing_interval_snapshot,
+            billable_units_snapshot=item.billable_units_snapshot,
+            included_units_snapshot=item.included_units_snapshot,
+            per_unit_amount_snapshot=item.per_unit_amount_snapshot,
+            unit_amount=item.unit_amount_snapshot,
+            total_amount=item.total_amount_snapshot,
+            features_snapshot=item.features_snapshot or {},
+        ))
+    session.add(BusinessSubscriptionEvent(
+        business_id=business.id,
+        subscription_id=sub.id,
+        event_type="invoice.issued",
+        actor_user_id=owner.id,
+        event_metadata={"invoice_id": str(invoice.id), "invoice_number": invoice.invoice_number,
+                        "currency": invoice.currency, "total": str(invoice.total)},
+    ))
+    await session.flush()
+    return {
+        "invoice_id": str(invoice.id), "invoice_number": invoice.invoice_number,
+        "status": invoice.status, "currency": invoice.currency,
+        "billing_interval": invoice.billing_interval, "total": str(invoice.total),
+        "due_at": invoice.due_at.isoformat(), "idempotent": False,
+        "notice": "Rental OS subscription invoice created. No payment was initiated and the subscription remains a draft.",
+    }
+
+
+@router.get("/invoices")
+async def list_subscription_invoices(
+    session: SessionDep,
+    business: Business = Depends(get_current_business),
+    limit: int = 50,
+    offset: int = 0,
+):
+    limit = max(1, min(limit, 100))
+    offset = max(0, offset)
+    invoices = (await session.scalars(
+        select(SubscriptionInvoice)
+        .where(SubscriptionInvoice.business_id == business.id)
+        .order_by(SubscriptionInvoice.created_at.desc())
+        .limit(limit).offset(offset)
+    )).all()
+    return {"invoices": [{
+        "id": str(invoice.id), "invoice_number": invoice.invoice_number,
+        "subscription_id": str(invoice.subscription_id), "status": invoice.status,
+        "currency": invoice.currency, "total": str(invoice.total),
+        "due_at": invoice.due_at.isoformat() if invoice.due_at else None,
+        "paid_at": invoice.paid_at.isoformat() if invoice.paid_at else None,
+    } for invoice in invoices], "limit": limit, "offset": offset}
+
+
+@router.get("/invoices/{invoice_id}")
+async def get_subscription_invoice(
+    invoice_id: UUID,
+    session: SessionDep,
+    business: Business = Depends(get_current_business),
+):
+    invoice = await session.scalar(
+        select(SubscriptionInvoice).where(
+            SubscriptionInvoice.id == invoice_id,
+            SubscriptionInvoice.business_id == business.id,
+        )
+    )
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Subscription invoice not found")
+    lines = (await session.scalars(
+        select(SubscriptionInvoiceLine)
+        .where(SubscriptionInvoiceLine.invoice_id == invoice.id)
+        .order_by(SubscriptionInvoiceLine.line_number)
+    )).all()
+    return {
+        "id": str(invoice.id), "invoice_number": invoice.invoice_number,
+        "subscription_id": str(invoice.subscription_id), "status": invoice.status,
+        "currency": invoice.currency, "billing_interval": invoice.billing_interval,
+        "subtotal": str(invoice.subtotal), "total": str(invoice.total),
+        "due_at": invoice.due_at.isoformat() if invoice.due_at else None,
+        "paid_at": invoice.paid_at.isoformat() if invoice.paid_at else None,
+        "lines": [{
+            "line_number": line.line_number, "code": line.item_code_snapshot,
+            "name": line.item_name_snapshot, "quantity": line.quantity,
+            "billing_interval": line.billing_interval_snapshot,
+            "billable_units": line.billable_units_snapshot,
+            "included_units": line.included_units_snapshot,
+            "per_unit_amount": str(line.per_unit_amount_snapshot),
+            "unit_amount": str(line.unit_amount), "total_amount": str(line.total_amount),
+            "features": line.features_snapshot or {},
+        } for line in lines],
+    }
+
+
+@router.get("/{subscription_id}/events")
+async def subscription_events(
+    subscription_id: UUID,
+    session: SessionDep,
+    business: Business = Depends(get_current_business),
+    limit: int = 50,
+):
+    limit = max(1, min(limit, 100))
+    sub = await session.scalar(select(BusinessSubscription.id).where(
+        BusinessSubscription.id == subscription_id,
+        BusinessSubscription.business_id == business.id,
+    ))
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    events = (await session.scalars(
+        select(BusinessSubscriptionEvent)
+        .where(BusinessSubscriptionEvent.subscription_id == subscription_id)
+        .order_by(desc(BusinessSubscriptionEvent.created_at))
+        .limit(limit)
+    )).all()
+    return {"events": [{
+        "event_type": event.event_type,
+        "metadata": event.event_metadata or {},
+        "created_at": event.created_at.isoformat(),
+    } for event in events]}

@@ -224,9 +224,38 @@ async def rent_run_loop() -> None:
             logger.warning("Scheduled rent run failed", exc_info=True)
 
 
+async def _subscription_cancellations_once() -> int:
+    from app.core.database import async_session_factory
+    from app.subscriptions.service import process_due_subscription_cancellations
+
+    async with async_session_factory() as session:
+        count = await process_due_subscription_cancellations(session)
+        await session.commit()
+    if count:
+        logger.info("Ended %s subscriptions after their paid period", count)
+    return count
+
+
+async def subscription_cancellation_loop() -> None:
+    """Catch up on startup and check hourly for period-end cancellations."""
+    try:
+        await _subscription_cancellations_once()
+    except Exception:
+        logger.warning("Startup subscription cancellation sweep failed", exc_info=True)
+
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            await _subscription_cancellations_once()
+        except Exception:
+            logger.warning("Scheduled subscription cancellation sweep failed", exc_info=True)
+
+
 def start_scheduler() -> list[asyncio.Task]:
     """Start the in-process loops that configuration has not disabled."""
     tasks: list[asyncio.Task] = []
+
+    tasks.append(asyncio.create_task(subscription_cancellation_loop()))
 
     if settings.REMINDERS_ENABLED:
         tasks.append(asyncio.create_task(reminder_loop()))
