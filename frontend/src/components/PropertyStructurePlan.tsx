@@ -19,6 +19,7 @@ type InternalSpace = {
 type Level = {
   id: string;
   label: string;
+  order?: number;
   spaces?: InternalSpace[];
 };
 
@@ -109,7 +110,7 @@ export default function PropertyStructurePlan({
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
           {sections.map((section) => {
-            const levels = [...(section.levels ?? [])].sort((a, b) =>  b.label.localeCompare(a.label, undefined, { numeric: true }));
+            const levels = [...(section.levels ?? [])].sort((a, b) => (b.order ?? 0) - (a.order ?? 0));
             return (
               <section key={section.id} className="min-w-0 overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900/60">
                 <header className="flex items-center justify-between gap-3 border-b border-slate-700/70 bg-slate-800/50 px-4 py-3">
