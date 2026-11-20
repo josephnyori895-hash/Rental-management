@@ -3,7 +3,14 @@ import { Check, Plus, Save, Trash2, X } from "lucide-react";
 import { getPropertyLayout, savePropertyLayout } from "../lib/api";
 
 type Orientation = "front" | "back" | "left" | "right" | "interior";
-type LayoutLevel = { id: string; label: string; order: number };
+type LayoutSpace = {
+  id: string;
+  label: string;
+  kind: "bedroom" | "kitchen" | "bathroom" | "living_room" | "dining_room" | "balcony" | "storage" | "corridor" | "office" | "shop" | "shared" | "other";
+  rentable_unit_id?: string | null;
+  order: number;
+};
+type LayoutLevel = { id: string; label: string; order: number; spaces: LayoutSpace[] };
 type LayoutFace = { id: string; label: string; orientation: Orientation };
 type LayoutSection = {
   id: string;
@@ -39,7 +46,7 @@ const makeSection = (name: string, kind: LayoutSection["kind"] = "block"): Layou
   id: newId(),
   name,
   kind,
-  levels: [{ id: newId(), label: "Ground floor", order: 0 }],
+  levels: [{ id: newId(), label: "Ground floor", order: 0, spaces: [] }],
   faces: [
     { id: newId(), label: "Front", orientation: "front" },
     { id: newId(), label: "Back", orientation: "back" },
@@ -147,8 +154,32 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
       id: newId(),
       label: `Floor ${section.levels.length}`,
       order: section.levels.length,
+      spaces: [],
     }],
   }));
+
+  const addSpace = (sectionId: string, levelId: string) => updateSection(sectionId, (section) => ({
+    ...section,
+    levels: section.levels.map((level) => level.id === levelId
+      ? { ...level, spaces: [...(level.spaces ?? []), { id: newId(), label: "New room", kind: "other", rentable_unit_id: null, order: level.spaces?.length ?? 0 }] }
+      : level),
+  }));
+
+  const updateSpace = (sectionId: string, levelId: string, spaceId: string, patch: Partial<LayoutSpace>) =>
+    updateSection(sectionId, (section) => ({
+      ...section,
+      levels: section.levels.map((level) => level.id === levelId
+        ? { ...level, spaces: (level.spaces ?? []).map((space) => space.id === spaceId ? { ...space, ...patch } : space) }
+        : level),
+    }));
+
+  const removeSpace = (sectionId: string, levelId: string, spaceId: string) =>
+    updateSection(sectionId, (section) => ({
+      ...section,
+      levels: section.levels.map((level) => level.id === levelId
+        ? { ...level, spaces: (level.spaces ?? []).filter((space) => space.id !== spaceId) }
+        : level),
+    }));
 
   const addFace = (sectionId: string) => updateSection(sectionId, (section) => ({
     ...section,
@@ -180,7 +211,7 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
         <header className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3 sm:px-6">
           <div>
             <h2 id="layout-editor-title" className="text-sm font-semibold text-white">Configure property layout</h2>
-            <p className="mt-1 text-xs text-slate-400">Map existing units to blocks, floors and faces. Rental records stay unchanged.</p>
+            <p className="mt-1 text-xs text-slate-400">Map rentable units to the property, then describe the rooms inside each unit. Bedrooms and kitchens never become rental units by themselves.</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close layout editor" className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white"><X className="h-4 w-4" /></button>
         </header>
@@ -224,7 +255,32 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-2">
                       <div className="flex items-center justify-between"><p className="text-xs font-semibold text-slate-300">Floors / levels</p><button type="button" onClick={() => addLevel(section.id)} className="text-xs text-emerald-300">+ Add floor</button></div>
-                      {section.levels.map((level) => <div key={level.id} className="flex gap-2"><input value={level.label} aria-label="Floor label" onChange={(event) => updateSection(section.id, (current) => ({ ...current, levels: current.levels.map((item) => item.id === level.id ? { ...item, label: event.target.value } : item) }))} className="min-w-0 flex-1 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-2 text-xs text-slate-200" /><span className="self-center text-[10px] text-slate-600">Order {level.order}</span></div>)}
+                      {section.levels.map((level) => (
+                        <div key={level.id} className="space-y-2 rounded-lg border border-slate-800 bg-slate-950/70 p-2.5">
+                          <div className="flex gap-2">
+                            <input value={level.label} aria-label="Floor label" onChange={(event) => updateSection(section.id, (current) => ({ ...current, levels: current.levels.map((item) => item.id === level.id ? { ...item, label: event.target.value } : item) }))} className="min-w-0 flex-1 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-2 text-xs text-slate-200" />
+                            <span className="self-center text-[10px] text-slate-600">Order {level.order}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[10px] font-semibold text-slate-400">Internal rooms / shared spaces</p>
+                            <button type="button" onClick={() => addSpace(section.id, level.id)} className="text-[10px] font-medium text-emerald-300">+ Add room</button>
+                          </div>
+                          {(level.spaces ?? []).map((space) => (
+                            <div key={space.id} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_130px_minmax(0,1fr)_auto]">
+                              <input value={space.label} aria-label="Internal room name" onChange={(event) => updateSpace(section.id, level.id, space.id, { label: event.target.value })} className="min-w-0 rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-[11px] text-slate-200" />
+                              <select value={space.kind} aria-label="Internal room type" onChange={(event) => updateSpace(section.id, level.id, space.id, { kind: event.target.value as LayoutSpace["kind"] })} className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-[11px] text-slate-300">
+                                <option value="bedroom">Bedroom</option><option value="kitchen">Kitchen</option><option value="bathroom">Bathroom</option><option value="living_room">Living room</option><option value="dining_room">Dining room</option><option value="balcony">Balcony</option><option value="storage">Storage</option><option value="corridor">Corridor</option><option value="office">Office</option><option value="shop">Shop</option><option value="shared">Shared area</option><option value="other">Other</option>
+                              </select>
+                              <select value={space.rentable_unit_id ?? ""} aria-label="Containing rentable unit" onChange={(event) => updateSpace(section.id, level.id, space.id, { rentable_unit_id: event.target.value || null })} className="min-w-0 rounded-lg border border-slate-800 bg-slate-950 px-2 py-2 text-[11px] text-slate-300">
+                                <option value="">Shared / not inside a unit</option>
+                                {rooms.map((room) => <option key={room.id} value={room.id}>Inside {room.unit_number}</option>)}
+                              </select>
+                              <button type="button" onClick={() => removeSpace(section.id, level.id, space.id)} aria-label={`Remove ${space.label}`} className="rounded-lg border border-rose-500/20 px-2 text-rose-300 hover:bg-rose-500/10"><Trash2 className="h-3.5 w-3.5" /></button>
+                            </div>
+                          ))}
+                          {(level.spaces ?? []).length === 0 && <p className="text-[10px] text-slate-600">No internal rooms defined for this level yet.</p>}
+                        </div>
+                      ))}
                     </div>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between"><p className="text-xs font-semibold text-slate-300">Faces / entrances</p><button type="button" onClick={() => addFace(section.id)} className="text-xs text-emerald-300">+ Add face</button></div>
