@@ -8,7 +8,18 @@ type CatalogItem = {
   item_type: "package" | "addon"; pricing_model: string; active: boolean;
   currency?: string | null; amount?: string | null; included_units?: number | null;
   per_unit_amount?: string | null; effective_from?: string | null;
+  billing_interval?: string | null; display_order?: number;
+  features?: Record<string, unknown>;
 };
+
+class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
 
 async function request(path: string, token: string, method = "GET", body?: unknown) {
   const response = await fetch(API + path, {
@@ -17,7 +28,7 @@ async function request(path: string, token: string, method = "GET", body?: unkno
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || `Request failed (${response.status})`);
+  if (!response.ok) throw new ApiError(data.detail || `Request failed (${response.status})`, response.status);
   return data;
 }
 
@@ -33,6 +44,7 @@ export default function PlatformAdminConsole() {
   const [platformPayments, setPlatformPayments] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [newItem, setNewItem] = useState({ code: "", name: "", item_type: "package", pricing_model: "flat_recurring", description: "", features: "{\n  \n}" });
@@ -63,12 +75,46 @@ export default function PlatformAdminConsole() {
 
   useEffect(() => {
     if (!token) return;
-    loadCatalogue(token).catch((e) => {
-      sessionStorage.removeItem(TOKEN_KEY);
-      setToken("");
-      setError(e.message || "Your platform admin session is no longer valid.");
+    let mounted = true;
+    setLoading(true);
+    setError("");
+    loadCatalogue(token).catch((e: unknown) => {
+      if (!mounted) return;
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        sessionStorage.removeItem(TOKEN_KEY);
+        setToken("");
+        setAdmin(null);
+        setError("Your platform administrator session has expired. Please sign in again.");
+      } else {
+        setError(e instanceof Error ? e.message : "Could not load platform data. Your session has been kept.");
+      }
+    }).finally(() => {
+      if (mounted) setLoading(false);
     });
+    return () => { mounted = false; };
   }, [token]);
+
+  async function refreshWorkspace() {
+    if (!token || loading) return;
+    setLoading(true);
+    setError("");
+    setNotice("");
+    try {
+      await loadCatalogue(token);
+      setNotice("Platform workspace refreshed.");
+    } catch (e: unknown) {
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        sessionStorage.removeItem(TOKEN_KEY);
+        setToken("");
+        setAdmin(null);
+        setError("Your platform administrator session has expired. Please sign in again.");
+      } else {
+        setError(e instanceof Error ? e.message : "Could not refresh platform data.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function login(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setError("");
@@ -140,9 +186,18 @@ export default function PlatformAdminConsole() {
         <input className="mt-2 w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 outline-none focus:border-emerald-400" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
         <label className="mt-4 block text-sm text-slate-300">Password</label>
         <input className="mt-2 w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 outline-none focus:border-emerald-400" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
-        {error && <p className="mt-4 text-sm text-rose-300">{error}</p>}
+        {error && <p role="alert" className="mt-4 rounded-lg border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2.5 text-sm text-rose-300">{error}</p>}
         <button disabled={busy} className="mt-6 w-full rounded-xl bg-emerald-400 px-4 py-3 font-semibold text-slate-950 disabled:opacity-50">{busy ? "Signing in…" : "Sign in securely"}</button>
       </form>
+    </main>
+  );
+
+  if (loading) return (
+    <main className="grid min-h-screen place-items-center bg-[#07111f] text-slate-300">
+      <div className="flex items-center gap-3 text-sm">
+        <span className="h-5 w-5 animate-spin rounded-full border-2 border-emerald-300/30 border-t-emerald-300" />
+        Loading platform workspace…
+      </div>
     </main>
   );
 
@@ -151,7 +206,7 @@ export default function PlatformAdminConsole() {
       <header className="border-b border-white/10 bg-slate-950/70 px-6 py-4">
         <div className="mx-auto flex max-w-7xl items-center justify-between">
           <div><p className="font-semibold tracking-wide">RENTAL OS <span className="ml-2 text-xs font-normal text-emerald-300">PLATFORM</span></p><p className="text-xs text-slate-500">Subscription catalogue and pricing</p></div>
-          <div className="flex items-center gap-4"><span className="hidden text-sm text-slate-400 sm:block">{admin?.full_name || admin?.email}</span><button onClick={logout} className="rounded-lg border border-white/10 px-3 py-2 text-sm hover:bg-white/5">Sign out</button></div>
+          <div className="flex items-center gap-2 sm:gap-4"><span className="hidden text-sm text-slate-400 sm:block">{admin?.full_name || admin?.email}</span><button onClick={refreshWorkspace} disabled={loading} className="rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 transition hover:bg-white/5 disabled:opacity-50">{loading ? "Refreshing…" : "Refresh"}</button><button onClick={logout} className="rounded-lg border border-white/10 px-3 py-2 text-sm hover:bg-white/5">Sign out</button></div>
         </div>
       </header>
       <div className="mx-auto max-w-7xl p-6">
@@ -203,7 +258,7 @@ export default function PlatformAdminConsole() {
                 try { features = JSON.parse(editItem.features || "{}"); }
                 catch { throw new Error("Feature entitlements must be valid JSON."); }
                 if (!features || Array.isArray(features) || typeof features !== "object") throw new Error("Feature entitlements must be a JSON object.");
-                await request(\`/subscriptions/admin/catalogue/\${selectedId}\`, token, "PUT", {
+                await request(`/subscriptions/admin/catalogue/${selectedId}`, token, "PUT", {
                   name: editItem.name, description: editItem.description, features,
                   active: editItem.active, display_order: Number(editItem.display_order),
                 });
