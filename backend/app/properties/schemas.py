@@ -161,7 +161,18 @@ class PropertyLayoutConfig(BaseModel):
             raise ValueError("A property layout may contain at most 50000 internal spaces")
         if len(space_ids) != len(set(space_ids)):
             raise ValueError("Internal space IDs must be unique within a property")
+        for section in self.sections:
+            for level in section.levels:
+                for space in level.spaces:
+                    if space.x is not None and space.width is not None and space.x + space.width > 1000:
+                        raise ValueError(f"Internal space {space.id} extends beyond the layout width")
+                    if space.y is not None and space.height is not None and space.y + space.height > 1000:
+                        raise ValueError(f"Internal space {space.id} extends beyond the layout height")
         for placement in self.placements:
+            if placement.x is not None and placement.width is not None and placement.x + placement.width > 1000:
+                raise ValueError(f"Unit {placement.unit_id} extends beyond the layout width")
+            if placement.y is not None and placement.height is not None and placement.y + placement.height > 1000:
+                raise ValueError(f"Unit {placement.unit_id} extends beyond the layout height")
             section = section_map.get(placement.section_id)
             if section is None:
                 raise ValueError(f"Unknown section: {placement.section_id}")
