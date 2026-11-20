@@ -203,7 +203,7 @@ export default function PlatformAdminConsole() {
                 try { features = JSON.parse(editItem.features || "{}"); }
                 catch { throw new Error("Feature entitlements must be valid JSON."); }
                 if (!features || Array.isArray(features) || typeof features !== "object") throw new Error("Feature entitlements must be a JSON object.");
-                await request(\`/subscriptions/admin/catalogue/\${selectedId}\`, token, "PUT", {
+                await request(`/subscriptions/admin/catalogue/${selectedId}`, token, "PUT", {
                   name: editItem.name, description: editItem.description, features,
                   active: editItem.active, display_order: Number(editItem.display_order),
                 });
