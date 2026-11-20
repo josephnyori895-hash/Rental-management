@@ -54,6 +54,7 @@ def upgrade() -> None:
         sa.CheckConstraint("per_unit_amount >= 0", name="per_unit_non_negative"),
         sa.CheckConstraint("included_units >= 0", name="included_units_non_negative"),
         sa.CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
+        sa.CheckConstraint("billing_interval IN ('monthly', 'quarterly', 'annual', 'one_time')", name="billing_interval"),
         sa.CheckConstraint("effective_to IS NULL OR effective_to > effective_from", name="effective_window"),
     )
     op.create_index("ix_subscription_price_versions_created_at", "subscription_price_versions", ["created_at"])
@@ -77,6 +78,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("status IN ('draft', 'trialing', 'active', 'past_due', 'cancelled', 'expired')", name="status"),
         sa.CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
+        sa.CheckConstraint("billing_interval IN ('monthly', 'quarterly', 'annual')", name="billing_interval"),
     )
     op.create_index("ix_business_subscriptions_created_at", "business_subscriptions", ["created_at"])
     op.create_index("ix_business_subscriptions_business_id", "business_subscriptions", ["business_id"])
@@ -101,6 +103,12 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("subscription_id", "catalog_item_id", name="uq_subscription_item_catalog"),
         sa.CheckConstraint("quantity > 0", name="quantity_positive"),
+        sa.CheckConstraint("billing_interval_snapshot IN ('monthly', 'quarterly', 'annual', 'one_time')", name="billing_interval_snapshot"),
+        sa.CheckConstraint(
+            "billable_units_snapshot >= 0 AND included_units_snapshot >= 0 "
+            "AND per_unit_amount_snapshot >= 0",
+            name="snapshot_non_negative",
+        ),
         sa.CheckConstraint("unit_amount_snapshot >= 0", name="unit_amount"),
         sa.CheckConstraint("total_amount_snapshot >= 0", name="total_amount"),
     )
@@ -122,10 +130,11 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("business_id", "invoice_number", name="uq_subscription_invoice_number"),
-        sa.CheckConstraint("status IN ('draft', 'open', 'paid', 'void', 'overdue')", name="status"),
+        sa.CheckConstraint("status IN ('draft', 'open', 'paid', 'void', 'past_due')", name="status"),
         sa.CheckConstraint("subtotal >= 0", name="subtotal"),
         sa.CheckConstraint("total >= 0", name="total"),
         sa.CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
+        sa.CheckConstraint("billing_interval IN ('monthly', 'quarterly', 'annual')", name="billing_interval"),
     )
     op.create_index("ix_subscription_invoices_created_at", "subscription_invoices", ["created_at"])
     op.create_index("ix_subscription_invoices_business_id", "subscription_invoices", ["business_id"])
@@ -144,35 +153,17 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("provider", "provider_reference", name="uq_subscription_payment_provider_ref"),
-        sa.CheckConstraint("status IN ('pending', 'completed', 'failed', 'refunded')", name="status"),
-        sa.CheckConstraint("amount >= 0", name="amount"),
+        sa.CheckConstraint("status IN ('pending', 'succeeded', 'failed', 'refunded')", name="status"),
+        sa.CheckConstraint("amount > 0", name="amount_positive"),
         sa.CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
     )
     op.create_index("ix_subscription_payments_created_at", "subscription_payments", ["created_at"])
     op.create_index("ix_subscription_payments_business_id", "subscription_payments", ["business_id"])
     op.create_index("ix_subscription_payments_invoice_id", "subscription_payments", ["invoice_id"])
 
-
-
-    # Keep invariants in PostgreSQL as well as at the API boundary.
-    op.create_check_constraint("valid_item_type", "subscription_catalog_items", "item_type IN ('package', 'addon')")
-    op.create_check_constraint("valid_pricing_model", "subscription_catalog_items", "pricing_model IN ('flat_recurring', 'per_billable_unit', 'one_time')")
-    op.create_check_constraint("amount_nonnegative", "subscription_price_versions", "amount >= 0")
-    op.create_check_constraint("per_unit_amount_nonnegative", "subscription_price_versions", "per_unit_amount >= 0")
-    op.create_check_constraint("included_units_nonnegative", "subscription_price_versions", "included_units >= 0")
-    op.create_check_constraint("valid_billing_interval", "subscription_price_versions", "billing_interval IN ('monthly', 'quarterly', 'annual', 'one_time')")
-    op.create_check_constraint("valid_effective_period", "subscription_price_versions", "effective_to IS NULL OR effective_to > effective_from")
-    op.create_check_constraint("valid_status", "business_subscriptions", "status IN ('draft', 'trialing', 'active', 'past_due', 'cancelled', 'expired')")
-    op.create_check_constraint("valid_billing_interval", "business_subscriptions", "billing_interval IN ('monthly', 'quarterly', 'annual')")
-    op.create_check_constraint("quantity_positive", "business_subscription_items", "quantity >= 1")
-    op.create_check_constraint("valid_billing_interval", "business_subscription_items", "billing_interval_snapshot IN ('monthly', 'quarterly', 'annual', 'one_time')")
-    op.create_check_constraint("unit_snapshot_nonnegative", "business_subscription_items", "billable_units_snapshot >= 0 AND included_units_snapshot >= 0 AND per_unit_amount_snapshot >= 0")
-    op.create_check_constraint("amounts_nonnegative", "business_subscription_items", "unit_amount_snapshot >= 0 AND total_amount_snapshot >= 0")
-    op.create_check_constraint("amounts_nonnegative", "subscription_invoices", "subtotal >= 0 AND total >= 0")
-    op.create_check_constraint("valid_status", "subscription_invoices", "status IN ('draft', 'open', 'paid', 'void', 'past_due')")
-    op.create_check_constraint("valid_billing_interval", "subscription_invoices", "billing_interval IN ('monthly', 'quarterly', 'annual')")
-    op.create_check_constraint("amount_positive", "subscription_payments", "amount > 0")
-    op.create_check_constraint("valid_status", "subscription_payments", "status IN ('pending', 'succeeded', 'failed', 'refunded')")
+    # All CHECK constraints are inline in the `op.create_table` calls above so
+    # that the names SQLAlchemy renders from the model and the names PostgreSQL
+    # receives are identical. Adding a second set here would double them.
 
 
 def downgrade() -> None:

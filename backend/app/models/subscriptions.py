@@ -97,9 +97,10 @@ class BusinessSubscription(Base, UUIDMixin, TimestampMixin):
         nullable=False, index=True,
     )
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
-    billing_interval: Mapped[str] = mapped_column(String(16), nullable=False, default="monthly")
+    billing_interval: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="monthly", server_default="monthly"
+    )
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="KES")
-    billing_interval: Mapped[str] = mapped_column(String(16), nullable=False, default="monthly")
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     current_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -170,6 +171,11 @@ class SubscriptionInvoice(Base, UUIDMixin, TimestampMixin):
     )
     invoice_number: Mapped[str] = mapped_column(String(40), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="KES")
+    # Issuance writes this and the invoice list/detail responses read it, so the
+    # column must exist on the model as well as in the migration.
+    billing_interval: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="monthly", server_default="monthly"
+    )
     subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
@@ -211,8 +217,12 @@ class SubscriptionInvoiceLine(Base, UUIDMixin, TimestampMixin):
         CheckConstraint("line_number >= 1", name="line_number_positive"),
         CheckConstraint("quantity >= 1", name="quantity_positive"),
         CheckConstraint("unit_amount >= 0 AND total_amount >= 0", name="amounts_nonnegative"),
-        CheckConstraint("billing_interval_snapshot IN ('monthly', 'quarterly', 'annual', 'one_time')", name="valid_billing_interval"),
-        CheckConstraint("billable_units_snapshot >= 0 AND included_units_snapshot >= 0 AND per_unit_amount_snapshot >= 0", name="unit_snapshot_nonnegative"),
+        CheckConstraint(f"billing_interval_snapshot IN ({_sql_in(BILLING_INTERVALS)})", name="billing_interval_snapshot"),
+        CheckConstraint(
+            "billable_units_snapshot >= 0 AND included_units_snapshot >= 0 "
+            "AND per_unit_amount_snapshot >= 0",
+            name="snapshot_non_negative",
+        ),
     )
 
     invoice_id: Mapped[UUID] = mapped_column(

@@ -34,14 +34,19 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("invoice_id", "line_number", name="uq_subscription_invoice_line_number"),
+        # Inline so the rendered names match the model's `ck_<table>_<name>` output.
+        sa.CheckConstraint("line_number >= 1", name="line_number_positive"),
+        sa.CheckConstraint("quantity >= 1", name="quantity_positive"),
+        sa.CheckConstraint("unit_amount >= 0 AND total_amount >= 0", name="amounts_nonnegative"),
+        sa.CheckConstraint("billing_interval_snapshot IN ('monthly', 'quarterly', 'annual', 'one_time')", name="billing_interval_snapshot"),
+        sa.CheckConstraint(
+            "billable_units_snapshot >= 0 AND included_units_snapshot >= 0 "
+            "AND per_unit_amount_snapshot >= 0",
+            name="snapshot_non_negative",
+        ),
     )
     op.create_index("ix_subscription_invoice_lines_created_at", "subscription_invoice_lines", ["created_at"])
     op.create_index("ix_subscription_invoice_lines_invoice_id", "subscription_invoice_lines", ["invoice_id"])
-    op.create_check_constraint("line_number_positive", "subscription_invoice_lines", "line_number >= 1")
-    op.create_check_constraint("quantity_positive", "subscription_invoice_lines", "quantity >= 1")
-    op.create_check_constraint("amounts_nonnegative", "subscription_invoice_lines", "unit_amount >= 0 AND total_amount >= 0")
-    op.create_check_constraint("valid_billing_interval", "subscription_invoice_lines", "billing_interval_snapshot IN ('monthly', 'quarterly', 'annual', 'one_time')")
-    op.create_check_constraint("unit_snapshot_nonnegative", "subscription_invoice_lines", "billable_units_snapshot >= 0 AND included_units_snapshot >= 0 AND per_unit_amount_snapshot >= 0")
     op.execute("""
         CREATE FUNCTION prevent_subscription_invoice_line_mutation()
         RETURNS trigger AS $
