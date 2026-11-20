@@ -186,7 +186,7 @@ export default function App() {
 
   const logout = () => { clearToken(); setToken(null); };
 
-  const goTo = (v: View) => { setView(v); setSidebarOpen(true); };
+  const goTo = (v: View) => { setView(v); setSidebarOpen(!isMobile); };
 
   const sidebarWidth = sidebarCollapsed ? 64 : 240;
 
