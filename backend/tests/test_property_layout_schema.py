@@ -185,3 +185,33 @@ def test_property_layout_config_rejects_out_of_range_unit_geometry(geometry):
                 "face_id": "front", "position": 0, **geometry,
             }],
         })
+
+
+
+def test_property_layout_config_rejects_geometry_outside_schematic_bounds():
+    with pytest.raises(ValidationError, match="extends beyond the layout width"):
+        PropertyLayoutConfig.model_validate({
+            "version": 1,
+            "sections": [{
+                "id": "main", "name": "Main",
+                "levels": [{"id": "ground", "label": "Ground", "order": 0}],
+                "faces": [{"id": "front", "label": "Front", "orientation": "front"}],
+            }],
+            "placements": [{
+                "unit_id": str(uuid4()), "section_id": "main", "level_id": "ground",
+                "face_id": "front", "position": 0, "x": 900, "width": 200,
+            }],
+        })
+
+
+def test_property_layout_config_rejects_internal_space_outside_schematic_bounds():
+    with pytest.raises(ValidationError, match="Internal space.*extends beyond"):
+        PropertyLayoutConfig.model_validate({
+            "version": 1,
+            "sections": [{
+                "id": "main", "name": "Main",
+                "levels": [{"id": "ground", "label": "Ground", "order": 0,
+                            "spaces": [{"id": "bedroom", "label": "Bedroom", "x": 900, "width": 200}]}],
+                "faces": [],
+            }],
+        })
