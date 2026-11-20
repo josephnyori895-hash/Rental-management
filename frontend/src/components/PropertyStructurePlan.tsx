@@ -32,6 +32,11 @@ type Section = {
   id: string;
   name: string;
   kind?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  rotation?: number;
   levels?: Level[];
 };
 
@@ -110,6 +115,24 @@ export default function PropertyStructurePlan({
           <span className="rounded-full border border-slate-700 px-2 py-1">{units.length} rentable units</span>
         </div>
       </div>
+
+      {sections.length > 0 && (
+        <section className="rounded-2xl border border-slate-700/80 bg-slate-900/50 p-3 sm:p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div><h4 className="text-xs font-semibold text-slate-100">Site arrangement</h4><p className="mt-1 text-[10px] text-slate-500">Relative placement of buildings and wings</p></div>
+            <span className="text-[9px] text-slate-600">Schematic · not to scale</span>
+          </div>
+          <div className="relative mx-auto aspect-square w-full max-w-2xl overflow-hidden rounded-xl border border-slate-700 bg-[linear-gradient(rgba(148,163,184,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,.08)_1px,transparent_1px)] bg-[size:5%_5%]">
+            {sections.map((section, index) => {
+              const width = section.width ?? 260;
+              const height = section.height ?? 260;
+              const x = Math.min(1000 - width, section.x ?? Math.min(720, 40 + (index % 3) * 310));
+              const y = Math.min(1000 - height, section.y ?? Math.min(720, 40 + Math.floor(index / 3) * 310));
+              return <div key={section.id} className="absolute flex items-center justify-center overflow-hidden rounded-lg border border-amber-400/40 bg-amber-950/65 px-1 text-center text-[10px] font-semibold text-amber-100" style={{ left: `${x / 10}%`, top: `${y / 10}%`, width: `${width / 10}%`, height: `${height / 10}%`, transform: `rotate(${section.rotation ?? 0}deg)` }} title={section.kind ?? "Building"}>{section.name}</div>;
+            })}
+          </div>
+        </section>
+      )}
 
       {sections.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 px-5 py-10 text-center">
