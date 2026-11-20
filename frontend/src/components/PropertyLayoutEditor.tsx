@@ -339,14 +339,14 @@ export default function PropertyLayoutEditor({ propertyId, rooms, onClose, onSav
                             items={[
                               ...(level.spaces ?? []).map((space, index) => ({
                                 id: `space:${section.id}:${level.id}:${space.id}`, label: space.label, kind: "space" as const,
-                                x: space.x ?? Math.min(820, 40 + (index % 4) * 220),
-                                y: space.y ?? Math.min(860, 40 + Math.floor(index / 4) * 180),
+                                x: Math.min(1000 - (space.width ?? 180), space.x ?? Math.min(820, 40 + (index % 4) * 220)),
+                                y: Math.min(1000 - (space.height ?? 140), space.y ?? Math.min(860, 40 + Math.floor(index / 4) * 180)),
                                 width: space.width ?? 180, height: space.height ?? 140, rotation: space.rotation ?? 0,
                               })),
                               ...config.placements.filter((placement) => placement.section_id === section.id && placement.level_id === level.id).map((placement, index) => ({
                                 id: `unit:${placement.unit_id}`, label: rooms.find((room) => room.id === placement.unit_id)?.unit_number ?? "Rental unit", kind: "unit" as const,
-                                x: placement.x ?? Math.min(810, 40 + (index % 4) * 220),
-                                y: placement.y ?? Math.min(850, 40 + Math.floor(index / 4) * 180),
+                                x: Math.min(1000 - (placement.width ?? 190), placement.x ?? Math.min(810, 40 + (index % 4) * 220)),
+                                y: Math.min(1000 - (placement.height ?? 150), placement.y ?? Math.min(850, 40 + Math.floor(index / 4) * 180)),
                                 width: placement.width ?? 190, height: placement.height ?? 150, rotation: placement.rotation ?? 0,
                               })),
                             ]}
