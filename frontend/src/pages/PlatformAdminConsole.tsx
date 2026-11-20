@@ -8,6 +8,8 @@ type CatalogItem = {
   item_type: "package" | "addon"; pricing_model: string; active: boolean;
   currency?: string | null; amount?: string | null; included_units?: number | null;
   per_unit_amount?: string | null; effective_from?: string | null;
+  billing_interval?: string | null; display_order?: number;
+  features?: Record<string, unknown>;
 };
 
 class ApiError extends Error {
