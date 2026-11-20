@@ -35,6 +35,11 @@ type Placement = {
   section_id: string;
   level_id: string;
   position: number;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  rotation?: number;
 };
 
 interface Props {
@@ -139,19 +144,32 @@ export default function PropertyStructurePlan({
                           <span className="text-[9px] text-slate-500">{levelUnits.length} units · {spaces.length} spaces</span>
                         </div>
                         {levelUnits.length > 0 ? (
-                          <div className="grid gap-2 sm:grid-cols-2">{levelUnits.map(unitCard)}</div>
+                          <div className="relative min-h-[260px] overflow-hidden rounded-xl border border-slate-800 bg-[linear-gradient(rgba(148,163,184,.07)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,.07)_1px,transparent_1px)] bg-[size:24px_24px]">
+                            <span className="absolute left-2 top-2 text-[9px] uppercase tracking-wider text-slate-600">Schematic · editable proportions</span>
+                            {levelUnits.map((unit, index) => {
+                              const placement = levelPlacements.find((item) => item.unit_id === unit.id);
+                              const x = placement?.x ?? 30 + (index % 4) * 220;
+                              const y = placement?.y ?? 40 + Math.floor(index / 4) * 180;
+                              const width = placement?.width ?? 190;
+                              const height = placement?.height ?? 150;
+                              const rotation = placement?.rotation ?? 0;
+                              return <div key={unit.id} className="absolute" style={{ left: `${Math.min(100, x / 10)}%`, top: `${Math.min(100, y / 10)}%`, width: `${Math.min(100, width / 10)}%`, height: `${Math.min(100, height / 10)}%`, transform: `rotate(${rotation}deg)`, transformOrigin: "center" }}>{unitCard(unit)}</div>;
+                            })}
+                          </div>
                         ) : (
                           <p className="rounded-lg border border-dashed border-slate-800 px-3 py-3 text-[10px] text-slate-600">No rentable units placed on this level</p>
                         )}
                         {spaces.length > 0 && (
                           <div className="mt-3 border-t border-slate-800 pt-3">
                             <p className="mb-2 flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wide text-slate-500"><DoorOpen className="h-3 w-3" /> Internal and shared spaces</p>
-                            <div className="flex flex-wrap gap-1.5">
-                              {spaces.map((space) => {
+                            <div className="relative min-h-[150px] overflow-hidden rounded-lg border border-slate-800 bg-slate-950/70">
+                              {spaces.map((space, index) => {
                                 const containingUnit = space.rentable_unit_id ? unitById.get(space.rentable_unit_id) : undefined;
-                                return <span key={space.id} className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[10px] text-slate-300">
-                                  {space.label}<span className="ml-1 text-slate-500">· {kindLabel(space.kind)}{containingUnit ? ` · ${containingUnit.unit_number}` : " · shared"}</span>
-                                </span>;
+                                const x = space.x ?? 20 + (index % 4) * 220;
+                                const y = space.y ?? 20 + Math.floor(index / 4) * 160;
+                                const width = space.width ?? 180;
+                                const height = space.height ?? 120;
+                                return <div key={space.id} className="absolute flex items-center justify-center overflow-hidden rounded-md border border-sky-500/30 bg-sky-500/10 px-1 text-center text-[9px] text-slate-300" style={{ left: `${Math.min(100, x / 10)}%`, top: `${Math.min(100, y / 10)}%`, width: `${Math.min(100, width / 10)}%`, height: `${Math.min(100, height / 10)}%`, transform: `rotate(${space.rotation ?? 0}deg)` }} title={`${kindLabel(space.kind)}${containingUnit ? ` · ${containingUnit.unit_number}` : " · shared"}`}>{space.label}</div>;
                               })}
                             </div>
                           </div>
