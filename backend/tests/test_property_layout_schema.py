@@ -215,3 +215,28 @@ def test_property_layout_config_rejects_internal_space_outside_schematic_bounds(
                 "faces": [],
             }],
         })
+
+
+
+def test_property_layout_config_keeps_legacy_section_geometry_optional():
+    config = PropertyLayoutConfig.model_validate({
+        "version": 1,
+        "sections": [{
+            "id": "legacy", "name": "Legacy building",
+            "levels": [{"id": "ground", "label": "Ground", "order": 0}],
+            "faces": [],
+        }],
+    })
+    assert config.sections[0].x is None
+    assert config.sections[0].width is None
+
+
+def test_property_layout_config_rejects_section_outside_schematic_bounds():
+    with pytest.raises(ValidationError, match="Section.*extends beyond the layout width"):
+        PropertyLayoutConfig.model_validate({
+            "version": 1,
+            "sections": [{
+                "id": "block", "name": "Block", "x": 900, "width": 200,
+                "levels": [], "faces": [],
+            }],
+        })
