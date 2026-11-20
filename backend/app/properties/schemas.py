@@ -14,7 +14,7 @@ class PropertyCreate(BaseModel):
     name: str
     address: str | None = None
     property_type: Literal[
-        "hostel", "apartment", "building", "house", "commercial"
+        "hostel", "apartment", "building", "house", "commercial", "mixed_use", "compound"
     ] = "hostel"
     description: str | None = None
 
@@ -95,7 +95,7 @@ class LayoutLevel(BaseModel):
     id: str = Field(min_length=1, max_length=80)
     label: str = Field(min_length=1, max_length=100)
     order: int = Field(ge=0, le=100)
-    spaces: list[LayoutSpace] = Field(default_factory=list, max_length=200)
+    spaces: list[LayoutSpace] = Field(default_factory=list, max_length=1000)
 
 
 class LayoutFace(BaseModel):
@@ -108,8 +108,8 @@ class LayoutSection(BaseModel):
     id: str = Field(min_length=1, max_length=80)
     name: str = Field(min_length=1, max_length=120)
     kind: Literal["block", "wing", "entrance", "standalone"] = "block"
-    levels: list[LayoutLevel] = Field(default_factory=list, max_length=30)
-    faces: list[LayoutFace] = Field(default_factory=list, max_length=10)
+    levels: list[LayoutLevel] = Field(default_factory=list, max_length=500)
+    faces: list[LayoutFace] = Field(default_factory=list, max_length=100)
 
 
 class UnitPlacement(BaseModel):
@@ -123,8 +123,8 @@ class UnitPlacement(BaseModel):
 class PropertyLayoutConfig(BaseModel):
     version: Literal[1] = 1
     building_type: Literal["hostel", "apartment", "building", "house", "commercial", "mixed_use", "compound"] = "building"
-    sections: list[LayoutSection] = Field(default_factory=list, max_length=30)
-    placements: list[UnitPlacement] = Field(default_factory=list, max_length=5000)
+    sections: list[LayoutSection] = Field(default_factory=list, max_length=1000)
+    placements: list[UnitPlacement] = Field(default_factory=list, max_length=50000)
 
     @model_validator(mode="after")
     def validate_references(self):
@@ -136,13 +136,19 @@ class PropertyLayoutConfig(BaseModel):
         if len(placement_ids) != len(set(placement_ids)):
             raise ValueError("Each unit may have only one layout placement")
         space_ids: list[str] = []
+        total_levels = 0
         for section in self.sections:
+            total_levels += len(section.levels)
+            if total_levels > 10000:
+                raise ValueError("A property layout may contain at most 10000 levels")
             level_ids = [level.id for level in section.levels]
             face_ids = [face.id for face in section.faces]
             if len(level_ids) != len(set(level_ids)) or len(face_ids) != len(set(face_ids)):
                 raise ValueError("Level and face IDs must be unique within a section")
             for level in section.levels:
                 space_ids.extend(space.id for space in level.spaces)
+        if len(space_ids) > 50000:
+            raise ValueError("A property layout may contain at most 50000 internal spaces")
         if len(space_ids) != len(set(space_ids)):
             raise ValueError("Internal space IDs must be unique within a property")
         for placement in self.placements:
