@@ -12,7 +12,7 @@ from uuid import UUID
 
 from sqlalchemy import (
     Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, JSON, Numeric,
-    String, Text, UniqueConstraint,
+    String, Text, UniqueConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -24,8 +24,10 @@ from app.models.base import TimestampMixin, UUIDMixin, utcnow
 SUBSCRIPTION_STATUSES = ("draft", "trialing", "active", "past_due", "cancelled", "expired")
 CATALOG_ITEM_TYPES = ("package", "addon")
 PRICING_MODELS = ("flat_recurring", "per_billable_unit", "one_time")
-SUBSCRIPTION_INVOICE_STATUSES = ("draft", "open", "paid", "void", "overdue")
-SUBSCRIPTION_PAYMENT_STATUSES = ("pending", "completed", "failed", "refunded")
+SUBSCRIPTION_INVOICE_STATUSES = ("draft", "open", "paid", "void", "past_due")
+BILLING_INTERVALS = ("monthly", "quarterly", "annual", "one_time")
+RECURRING_INTERVALS = ("monthly", "quarterly", "annual")
+SUBSCRIPTION_PAYMENT_STATUSES = ("pending", "succeeded", "failed", "refunded")
 
 
 def _sql_in(values: tuple[str, ...]) -> str:
@@ -60,6 +62,7 @@ class SubscriptionPriceVersion(Base, UUIDMixin, TimestampMixin):
         CheckConstraint("per_unit_amount >= 0", name="per_unit_non_negative"),
         CheckConstraint("included_units >= 0", name="included_units_non_negative"),
         CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
+        CheckConstraint(f"billing_interval IN ({_sql_in(BILLING_INTERVALS)})", name="billing_interval"),
         CheckConstraint(
             "effective_to IS NULL OR effective_to > effective_from",
             name="effective_window",
@@ -71,6 +74,7 @@ class SubscriptionPriceVersion(Base, UUIDMixin, TimestampMixin):
         nullable=False, index=True,
     )
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="KES")
+    billing_interval: Mapped[str] = mapped_column(String(16), nullable=False, default="monthly", server_default="monthly")
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     included_units: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     per_unit_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0"))
@@ -83,8 +87,14 @@ class BusinessSubscription(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "business_subscriptions"
     __table_args__ = (
         Index("ix_business_subscription_status", "business_id", "status"),
+        Index(
+            "uq_business_subscriptions_one_live_per_business",
+            "business_id", unique=True,
+            postgresql_where=text("status IN ('active', 'trialing', 'past_due')"),
+        ),
         CheckConstraint(f"status IN ({_sql_in(SUBSCRIPTION_STATUSES)})", name="status"),
         CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
+        CheckConstraint(f"billing_interval IN ({_sql_in(RECURRING_INTERVALS)})", name="billing_interval"),
     )
 
     business_id: Mapped[UUID] = mapped_column(
@@ -92,12 +102,17 @@ class BusinessSubscription(Base, UUIDMixin, TimestampMixin):
         nullable=False, index=True,
     )
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
+    billing_interval: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="monthly", server_default="monthly"
+    )
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="KES")
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     current_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancellation_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
 
 class BusinessSubscriptionItem(Base, UUIDMixin, TimestampMixin):
@@ -105,6 +120,12 @@ class BusinessSubscriptionItem(Base, UUIDMixin, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("subscription_id", "catalog_item_id", name="uq_subscription_item_catalog"),
         CheckConstraint("quantity > 0", name="quantity_positive"),
+        CheckConstraint(f"billing_interval_snapshot IN ({_sql_in(BILLING_INTERVALS)})", name="billing_interval_snapshot"),
+        CheckConstraint(
+            "billable_units_snapshot >= 0 AND included_units_snapshot >= 0 "
+            "AND per_unit_amount_snapshot >= 0",
+            name="snapshot_non_negative",
+        ),
         CheckConstraint("unit_amount_snapshot >= 0", name="unit_amount"),
         CheckConstraint("total_amount_snapshot >= 0", name="total_amount"),
     )
@@ -124,6 +145,10 @@ class BusinessSubscriptionItem(Base, UUIDMixin, TimestampMixin):
     item_code_snapshot: Mapped[str] = mapped_column(String(80), nullable=False)
     item_name_snapshot: Mapped[str] = mapped_column(String(160), nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    billing_interval_snapshot: Mapped[str] = mapped_column(String(16), nullable=False, default="monthly", server_default="monthly")
+    billable_units_snapshot: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    included_units_snapshot: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    per_unit_amount_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0"))
     unit_amount_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     total_amount_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     features_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
@@ -138,6 +163,7 @@ class SubscriptionInvoice(Base, UUIDMixin, TimestampMixin):
         CheckConstraint("subtotal >= 0", name="subtotal"),
         CheckConstraint("total >= 0", name="total"),
         CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
+        CheckConstraint(f"billing_interval IN ({_sql_in(RECURRING_INTERVALS)})", name="billing_interval"),
     )
 
     business_id: Mapped[UUID] = mapped_column(
@@ -150,6 +176,11 @@ class SubscriptionInvoice(Base, UUIDMixin, TimestampMixin):
     )
     invoice_number: Mapped[str] = mapped_column(String(40), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="KES")
+    # Issuance writes this and the invoice list/detail responses read it, so the
+    # column must exist on the model as well as in the migration.
+    billing_interval: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="monthly", server_default="monthly"
+    )
     subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
@@ -163,7 +194,7 @@ class SubscriptionPayment(Base, UUIDMixin, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("provider", "provider_reference", name="uq_subscription_payment_provider_ref"),
         CheckConstraint(f"status IN ({_sql_in(SUBSCRIPTION_PAYMENT_STATUSES)})", name="status"),
-        CheckConstraint("amount >= 0", name="amount"),
+        CheckConstraint("amount > 0", name="amount_positive"),
         CheckConstraint("currency ~ '^[A-Z]{3}$'", name="currency"),
     )
 
@@ -181,3 +212,61 @@ class SubscriptionPayment(Base, UUIDMixin, TimestampMixin):
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="KES")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SubscriptionInvoiceLine(Base, UUIDMixin, TimestampMixin):
+    """Immutable description of what a Rental OS subscription invoice charged."""
+    __tablename__ = "subscription_invoice_lines"
+    __table_args__ = (
+        UniqueConstraint("invoice_id", "line_number", name="uq_subscription_invoice_line_number"),
+        CheckConstraint("line_number >= 1", name="line_number_positive"),
+        CheckConstraint("quantity >= 1", name="quantity_positive"),
+        CheckConstraint("unit_amount >= 0 AND total_amount >= 0", name="amounts_nonnegative"),
+        CheckConstraint(f"billing_interval_snapshot IN ({_sql_in(BILLING_INTERVALS)})", name="billing_interval_snapshot"),
+        CheckConstraint(
+            "billable_units_snapshot >= 0 AND included_units_snapshot >= 0 "
+            "AND per_unit_amount_snapshot >= 0",
+            name="snapshot_non_negative",
+        ),
+    )
+
+    invoice_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("subscription_invoices.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    line_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    item_code_snapshot: Mapped[str] = mapped_column(String(80), nullable=False)
+    item_name_snapshot: Mapped[str] = mapped_column(String(160), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    billing_interval_snapshot: Mapped[str] = mapped_column(String(16), nullable=False)
+    billable_units_snapshot: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    included_units_snapshot: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    per_unit_amount_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0"))
+    unit_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    total_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    features_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class BusinessSubscriptionEvent(Base, UUIDMixin):
+    """Append-only lifecycle history for one business subscription."""
+    __tablename__ = "business_subscription_events"
+    __table_args__ = (
+        Index("ix_business_subscription_event_subscription", "subscription_id", "created_at"),
+        Index("ix_business_subscription_event_business", "business_id", "created_at"),
+    )
+
+    business_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("businesses.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    subscription_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("business_subscriptions.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    actor_user_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    event_metadata: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)

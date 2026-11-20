@@ -17,6 +17,8 @@ from app.core.database import Base
 from app.models.base import *        # AuditLog + mixins
 from app.models.business import *    # Business, User, UserRole, SubscriptionTier
 from app.models.subscriptions import *  # Rental OS platform subscription models
+from app.models.platform_admin import *  # Separate platform administrator identities
+from app.models.platform_admin_event import *  # Append-only platform audit events
 from app.models.tenant import *      # Tenant
 from app.models.lease import *       # Lease, LeaseStatus
 from app.models.property import *    # Property, Unit, enums
@@ -28,6 +30,8 @@ from app.documents.models import *  # Document
 # registered by the package import above. Without this, autogenerate sees the
 # accounting tables as extraneous and proposes dropping them.
 from app.accounting.models import *  # ChartOfAccount
+from app.models.expense import *  # Expense
+from app.models.maintenance import *  # MaintenanceTicket
 
 # Reuse the application's DSN translation, so migrations connect exactly as the
 # app does. A hosted Postgres DSN carries `?sslmode=require`, which SQLAlchemy's

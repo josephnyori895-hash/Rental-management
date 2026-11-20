@@ -58,7 +58,7 @@ DIALECT = postgresql.dialect()
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 VERSIONS_DIR = BACKEND_DIR / "migrations" / "versions"
 HEAD_REVISION = "e5f6a7b8c9d0"
-LATEST_REVISION = "0a1b2c3d4e5f"  # actual alembic head: platform subscriptions
+LATEST_REVISION = "4e5f6a7b8c9d"  # actual alembic head: fresh-install schema repair
 
 
 # ── Consumption ────────────────────────────────────────────────────
@@ -548,15 +548,20 @@ def test_migration_history_is_a_single_linear_chain_ending_at_head():
     for path in sorted(VERSIONS_DIR.glob("*.py")):
         text = path.read_text()
         revision = re.search(r"^revision: str = ['\"]([^'\"]+)['\"]", text, re.M)
-        down = re.search(r"^down_revision: Union\[str, None\] = (?:'([^']+)'|None)", text, re.M)
+        # Accept single-quoted, double-quoted and `None` revisions: the quote
+        # style is the author's, not part of the graph.
+        down = re.search(
+            r"^down_revision: Union\[str, None\] = (?:'([^']+)'|\"([^\"]+)\"|None)",
+            text, re.M,
+        )
         assert revision, f"No revision id in {path.name}"
         assert down, f"No down_revision in {path.name}"
-        revisions[revision.group(1)] = down.group(1)
+        revisions[revision.group(1)] = down.group(1) or down.group(2)
 
     assert HEAD_REVISION in revisions
     assert revisions[HEAD_REVISION] == "d4e5f6a7b8c9"
     # The head's direct predecessor must be a real revision in the graph.
-    assert revisions[LATEST_REVISION] == "f6a7b8c9d0e1"
+    assert revisions[LATEST_REVISION] == "3d4e5f6a7b8c"
 
     bases = [rev for rev, down in revisions.items() if down is None]
     heads = [rev for rev in revisions if rev not in set(revisions.values())]

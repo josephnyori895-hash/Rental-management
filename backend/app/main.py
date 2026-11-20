@@ -39,6 +39,7 @@ from app.reconciliation.router import router as reconciliation_router
 from app.analytics.router import router as analytics_router
 from app.social.bot import router as social_router
 from app.subscriptions.router import router as subscriptions_router
+from app.platform_admin.router import router as platform_admin_router
 
 
 @asynccontextmanager
@@ -177,6 +178,8 @@ def create_app() -> FastAPI:
     app.include_router(analytics_router, prefix=api, dependencies=owner_only)
     # Platform subscription routes enforce their own authenticated role/business scope.
     app.include_router(subscriptions_router, prefix=api)
+    # Platform administrators authenticate as a separate principal, never as a landlord user.
+    app.include_router(platform_admin_router, prefix=api)
 
     @app.get("/health", tags=["System"])
     async def health_check():
