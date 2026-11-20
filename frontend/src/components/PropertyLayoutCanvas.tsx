@@ -11,7 +11,7 @@ export type LayoutGeometry = {
 export type LayoutCanvasItem = LayoutGeometry & {
   id: string;
   label: string;
-  kind: "unit" | "space";
+  kind: "unit" | "space" | "section";
 };
 
 interface Props {
@@ -88,7 +88,7 @@ export default function PropertyLayoutCanvas({ items, onGeometryChange }: Props)
         {items.map((item) => (
           <div
             key={item.id}
-            className={`absolute flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border shadow-sm ${item.kind === "unit" ? "border-emerald-400/50 bg-emerald-950/80" : "border-sky-400/40 bg-sky-950/80"}`}
+            className={`absolute flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border shadow-sm ${item.kind === "unit" ? "border-emerald-400/50 bg-emerald-950/80" : item.kind === "section" ? "border-amber-400/50 bg-amber-950/80" : "border-sky-400/40 bg-sky-950/80"}`}
             style={{
               left: `${item.x / 10}%`,
               top: `${item.y / 10}%`,
