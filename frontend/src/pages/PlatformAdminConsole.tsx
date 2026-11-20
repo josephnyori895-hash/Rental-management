@@ -91,6 +91,28 @@ export default function PlatformAdminConsole() {
     return () => { mounted = false; };
   }, [token]);
 
+  async function refreshWorkspace() {
+    if (!token || loading) return;
+    setLoading(true);
+    setError("");
+    setNotice("");
+    try {
+      await loadCatalogue(token);
+      setNotice("Platform workspace refreshed.");
+    } catch (e: unknown) {
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        sessionStorage.removeItem(TOKEN_KEY);
+        setToken("");
+        setAdmin(null);
+        setError("Your platform administrator session has expired. Please sign in again.");
+      } else {
+        setError(e instanceof Error ? e.message : "Could not refresh platform data.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function login(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setError("");
     try {
@@ -161,7 +183,7 @@ export default function PlatformAdminConsole() {
         <input className="mt-2 w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 outline-none focus:border-emerald-400" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
         <label className="mt-4 block text-sm text-slate-300">Password</label>
         <input className="mt-2 w-full rounded-xl border border-white/10 bg-slate-950 px-4 py-3 outline-none focus:border-emerald-400" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
-        {error && <p className="mt-4 text-sm text-rose-300">{error}</p>}
+        {error && <p role="alert" className="mt-4 rounded-lg border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2.5 text-sm text-rose-300">{error}</p>}
         <button disabled={busy} className="mt-6 w-full rounded-xl bg-emerald-400 px-4 py-3 font-semibold text-slate-950 disabled:opacity-50">{busy ? "Signing in…" : "Sign in securely"}</button>
       </form>
     </main>
@@ -181,7 +203,7 @@ export default function PlatformAdminConsole() {
       <header className="border-b border-white/10 bg-slate-950/70 px-6 py-4">
         <div className="mx-auto flex max-w-7xl items-center justify-between">
           <div><p className="font-semibold tracking-wide">RENTAL OS <span className="ml-2 text-xs font-normal text-emerald-300">PLATFORM</span></p><p className="text-xs text-slate-500">Subscription catalogue and pricing</p></div>
-          <div className="flex items-center gap-4"><span className="hidden text-sm text-slate-400 sm:block">{admin?.full_name || admin?.email}</span><button onClick={logout} className="rounded-lg border border-white/10 px-3 py-2 text-sm hover:bg-white/5">Sign out</button></div>
+          <div className="flex items-center gap-2 sm:gap-4"><span className="hidden text-sm text-slate-400 sm:block">{admin?.full_name || admin?.email}</span><button onClick={refreshWorkspace} disabled={loading} className="rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 transition hover:bg-white/5 disabled:opacity-50">{loading ? "Refreshing…" : "Refresh"}</button><button onClick={logout} className="rounded-lg border border-white/10 px-3 py-2 text-sm hover:bg-white/5">Sign out</button></div>
         </div>
       </header>
       <div className="mx-auto max-w-7xl p-6">
