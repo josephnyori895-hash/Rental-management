@@ -89,6 +89,11 @@ class LayoutSpace(BaseModel):
     ] = "other"
     rentable_unit_id: UUID | None = None
     order: int = Field(default=0, ge=0, le=10000)
+    x: int | None = Field(default=None, ge=0, le=1000)
+    y: int | None = Field(default=None, ge=0, le=1000)
+    width: int | None = Field(default=None, ge=10, le=1000)
+    height: int | None = Field(default=None, ge=10, le=1000)
+    rotation: int | None = Field(default=None, ge=-180, le=180)
 
 
 class LayoutLevel(BaseModel):
@@ -118,6 +123,11 @@ class UnitPlacement(BaseModel):
     level_id: str = Field(min_length=1, max_length=80)
     face_id: str = Field(min_length=1, max_length=80)
     position: int = Field(ge=0, le=10000)
+    x: int | None = Field(default=None, ge=0, le=1000)
+    y: int | None = Field(default=None, ge=0, le=1000)
+    width: int | None = Field(default=None, ge=10, le=1000)
+    height: int | None = Field(default=None, ge=10, le=1000)
+    rotation: int | None = Field(default=None, ge=-180, le=180)
 
 
 class PropertyLayoutConfig(BaseModel):
